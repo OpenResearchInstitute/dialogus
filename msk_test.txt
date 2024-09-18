@@ -1,0 +1,390 @@
+* Acquiring IIO context
+* Acquiring AD9361 streaming devices
+* Configuring AD9361 for streaming
+* Acquiring AD9361 phy channel 0
+* Acquiring AD9361 RX lo channel
+* Acquiring AD9361 phy channel 0
+* Acquiring AD9361 TX lo channel
+* Initializing AD9361 IIO streaming channels
+* Enabling IIO streaming channels
+* Creating non-cyclic IIO buffers with 1 MiS
+Hello World! Running TX-DMA access tests.
+Opening a character device file in DDR memory.
+Memory map the address of the TX-DMAC via its AXI lite control interface register block.
+Memory map the address of the MSK block via its AXI lite control interface.
+Create a buffer for some transmitted data.
+TX DMAC Interface Description (0x00070313@0x0010):
+Writing to scratch register in TX-DMAC.
+Reading from scratch register in TX-DMAC. We see: (0x5555aaaa@0008)
+Reading the TX-DMAC peripheral ID: (0x00000000@0004)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Configure MSK for minimum viable product test.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Reading from MSK block HASH ID LOW: (0xaaaa5555@0000)
+Reading from MSK block HASH ID HIGH: (0x5555aaaa@0004)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Initialize MSK block.
+Read MSK_INIT: (0x00000000@0008)
+bit 0: 0 is normal operation and 1 is initialize modem (reset condition).
+Assert INIT: Write 1 to MSK_INIT
+Reading MSK_INIT. We see: (0x00000001@0008)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Writing MSK_CONTROL register.
+Writing PTT and loopback enable, bits 0 and 1 set.
+Reading back MSK_CONTROL status register. We see: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Reading the MSK_STATUS register, we see: (0x00000006@0010)
+Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable
+tx_enable is data to DAC enabled. rx_enable is data from ADC enable.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+TX_BIT_COUNT register is read, we see: (0x00000000@0014)
+This register reads out the count of data requests made by the modem.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+TX_ENABLE_COUNT register is read and write. It holds the number of clocks on which Tx Enable is active.
+First we read it, we see: (0xf859d6fd@0018)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Writing fb, f1, f2 (values enumerated in github register map for MSK TX).
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Writing f1, f2 (values enumerated in github register map for MSK RX).
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Reading the LPF_CONFIG_0 register.
+First we read it, we see: (0x00020000@0030)
+bit 0 is whether or not we freeze the accumulator's current value.
+bit 1 holds the PI accumulator at zero.
+bits 31:16 are the LPF IIR alpha value.
+Reading the LPF_CONFIG_1 register.
+First we read it, we see: (0x00640028@0034)
+bit 15:0 sets the integral gain of the PI controller integrator.
+bit 31:16 sets the proportional gain of the PI controller integrator.
+Writing 0x00020000 as filter roll off.
+Writing 0x0064 as proportional gain and 0x00000028 as integral gain.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read TX_DATA_WIDTH, which is the modem transmit input/output data width.
+We see: (0x00000008@0038)
+Read RX_DATA_WIDTH, which is the modem receive input/output data width.
+We see: (0x00000008@003c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Pseudo Random Binary Sequence control registers are read.
+We read PRBS_CONTROL: (0x00000000@0040)
+bit 0 is PRBS data select. 0 is normal data transmit and 1 is PRBS transmit.
+bit 1 is PRBS error insert. 0 is no error insertion and 1 inserts a bit error in transmit.
+NOTE: error is inserted in both normal and PRBS data selection modes.
+bit 2 is PRBS clear. This is reserved.
+bit 3 is PRBS sync. 0 is normal operations. 1 synchronizes PRBS monitor.
+We read PRBS_INITIAL_STATE: (0xffffffff@0044)
+This is the PRBS seed value. It sets the starting value of the PRBS generator.
+We read PRBS_POLYNOMIAL: (0x48000000@0048)
+Bit positions set to 1 indicate polynomial feedback positions.
+We read PRBS_ERROR_MASK: (0x00000001@004c)
+Bit positions set to 1 indicate bits that are inverted when a bit error is inserted.
+We read PRBS_BIT_COUNT: (0x00000000@0050)
+Number of bits received by the PRBS monitor since last BER
+can be calculated as the ratio of received bits to errored-bits.
+We read PRBS_ERROR_COUNT: (0x00000000@0054)
+Number of errored-bits received by the PRBS monitor since last BER
+can be calculated as the ratio of received bits to errored-bits.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+We read LPF_ACCUM_F1: (0x00000000@0058)
+PI conotroller accumulator value.
+We read LPF_ACCUM_F2: (0x00000000@005c)
+PI conotroller accumulator value.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Attempt to set up PRBS. Loopback was enabled above in MSK_CONTROL.
+Write 0x00000001 to PRBS_CONTROL. PRBS active (bit 0), no errors inserted (bit 1).
+We read PRBS_CONTROL: (0x00000001@0040)
+Write a value to PRBS_INITIAL_STATE, as the seed.
+We read PRBS_INITIAL_STATE: (0xffffffff@0044)
+Write 0x48000000 to PRBS_POLYNOMIAL (31,28), a max length Fibonacci sequence generators.
+We read PRBS_POLYNOMIAL: (0x48000000@0048)
+Write 0x00000001 to PRBS_ERROR_MASK.
+We read PRBS_ERROR_MASK: (0x00000001@004c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Deassert INIT: Write 0 to MSK_INIT
+Read MSK_INIT: (0x00000000@0008)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000006@0050)
+PRBS_ERROR_COUNT: (0x00000003@0054)
+PRBS_BIT_COUNT:   (0x000000bb@0050)
+PRBS_ERROR_COUNT: (0x00000059@0054)
+PRBS_BIT_COUNT:   (0x00000170@0050)
+PRBS_ERROR_COUNT: (0x000000a3@0054)
+PRBS_BIT_COUNT:   (0x00000224@0050)
+PRBS_ERROR_COUNT: (0x00000106@0054)
+PRBS_BIT_COUNT:   (0x000002d8@0050)
+PRBS_ERROR_COUNT: (0x0000015c@0054)
+PRBS_BIT_COUNT:   (0x00000388@0050)
+PRBS_ERROR_COUNT: (0x000001b5@0054)
+PRBS_BIT_COUNT:   (0x0000043a@0050)
+PRBS_ERROR_COUNT: (0x00000211@0054)
+PRBS_BIT_COUNT:   (0x000004eb@0050)
+PRBS_ERROR_COUNT: (0x00000268@0054)
+PRBS_BIT_COUNT:   (0x0000059a@0050)
+PRBS_ERROR_COUNT: (0x000002c1@0054)
+PRBS_BIT_COUNT:   (0x0000064e@0050)
+PRBS_ERROR_COUNT: (0x00000324@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x00000009@0040)
+We read PRBS_CONTROL: (0x00000001@0040)
+We read MSK_CONTROL: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000016@0054)
+PRBS_BIT_COUNT:   (0x00000144@0050)
+PRBS_ERROR_COUNT: (0x00000043@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x0000006b@0054)
+PRBS_BIT_COUNT:   (0x000002a8@0050)
+PRBS_ERROR_COUNT: (0x000000a8@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x000000e4@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x00000104@0054)
+PRBS_BIT_COUNT:   (0x000004bc@0050)
+PRBS_ERROR_COUNT: (0x00000139@0054)
+PRBS_BIT_COUNT:   (0x0000056e@0050)
+PRBS_ERROR_COUNT: (0x00000173@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x000001c3@0054)
+PRBS_BIT_COUNT:   (0x000006d1@0050)
+PRBS_ERROR_COUNT: (0x00000226@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x0000000b to PRBS_CONTROL. PRBS active, errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x0000000b@0040)
+We read PRBS_CONTROL: (0x00000003@0040)
+We read MSK_CONTROL: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000144@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000002a8@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000004bc@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000056e@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000006d1@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x00000009@0040)
+We read PRBS_CONTROL: (0x00000001@0040)
+We read MSK_CONTROL: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000145@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000002a8@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000004bd@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000056f@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000006d2@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Enable PTT, loopback, and assert RX invert. Write 0x00000007 to MSK_CONTROL.
+We read MSK_CONTROL: (0x00000007@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000786@0050)
+PRBS_ERROR_COUNT: (0x00000001@0054)
+PRBS_BIT_COUNT:   (0x00000837@0050)
+PRBS_ERROR_COUNT: (0x000000b3@0054)
+PRBS_BIT_COUNT:   (0x000008ea@0050)
+PRBS_ERROR_COUNT: (0x00000166@0054)
+PRBS_BIT_COUNT:   (0x0000099c@0050)
+PRBS_ERROR_COUNT: (0x00000218@0054)
+PRBS_BIT_COUNT:   (0x00000a4f@0050)
+PRBS_ERROR_COUNT: (0x000002ca@0054)
+PRBS_BIT_COUNT:   (0x00000b01@0050)
+PRBS_ERROR_COUNT: (0x0000037d@0054)
+PRBS_BIT_COUNT:   (0x00000bb3@0050)
+PRBS_ERROR_COUNT: (0x0000042f@0054)
+PRBS_BIT_COUNT:   (0x00000c66@0050)
+PRBS_ERROR_COUNT: (0x000004e1@0054)
+PRBS_BIT_COUNT:   (0x00000d18@0050)
+PRBS_ERROR_COUNT: (0x00000594@0054)
+PRBS_BIT_COUNT:   (0x00000dca@0050)
+PRBS_ERROR_COUNT: (0x00000646@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x00000009@0040)
+We read PRBS_CONTROL: (0x00000001@0040)
+We read MSK_CONTROL: (0x00000007@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000094@0050)
+PRBS_ERROR_COUNT: (0x00000076@0054)
+PRBS_BIT_COUNT:   (0x00000145@0050)
+PRBS_ERROR_COUNT: (0x000000e1@0054)
+PRBS_BIT_COUNT:   (0x000001f8@0050)
+PRBS_ERROR_COUNT: (0x00000134@0054)
+PRBS_BIT_COUNT:   (0x000002aa@0050)
+PRBS_ERROR_COUNT: (0x00000193@0054)
+PRBS_BIT_COUNT:   (0x0000035c@0050)
+PRBS_ERROR_COUNT: (0x000001e4@0054)
+PRBS_BIT_COUNT:   (0x0000040e@0050)
+PRBS_ERROR_COUNT: (0x0000023b@0054)
+PRBS_BIT_COUNT:   (0x000004c1@0050)
+PRBS_ERROR_COUNT: (0x0000029f@0054)
+PRBS_BIT_COUNT:   (0x00000573@0050)
+PRBS_ERROR_COUNT: (0x000002ec@0054)
+PRBS_BIT_COUNT:   (0x00000626@0050)
+PRBS_ERROR_COUNT: (0x0000034d@0054)
+PRBS_BIT_COUNT:   (0x000006d8@0050)
+PRBS_ERROR_COUNT: (0x000003a9@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x0000000b to PRBS_CONTROL. PRBS active, errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x0000000b@0040)
+We read PRBS_CONTROL: (0x00000003@0040)
+We read MSK_CONTROL: (0x00000007@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000075@0054)
+PRBS_BIT_COUNT:   (0x00000144@0050)
+PRBS_ERROR_COUNT: (0x000000e0@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x00000132@0054)
+PRBS_BIT_COUNT:   (0x000002a8@0050)
+PRBS_ERROR_COUNT: (0x00000191@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x000001e3@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x0000023a@0054)
+PRBS_BIT_COUNT:   (0x000004bd@0050)
+PRBS_ERROR_COUNT: (0x0000029c@0054)
+PRBS_BIT_COUNT:   (0x0000056e@0050)
+PRBS_ERROR_COUNT: (0x000002eb@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x0000034d@0054)
+PRBS_BIT_COUNT:   (0x000006d1@0050)
+PRBS_ERROR_COUNT: (0x000003a7@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.
+We read PRBS_CONTROL: (0x00000009@0040)
+We read PRBS_CONTROL: (0x00000001@0040)
+We read MSK_CONTROL: (0x00000007@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000075@0054)
+PRBS_BIT_COUNT:   (0x00000144@0050)
+PRBS_ERROR_COUNT: (0x000000e0@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x00000132@0054)
+PRBS_BIT_COUNT:   (0x000002a8@0050)
+PRBS_ERROR_COUNT: (0x00000191@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x000001e3@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x0000023a@0054)
+PRBS_BIT_COUNT:   (0x000004bd@0050)
+PRBS_ERROR_COUNT: (0x0000029c@0054)
+PRBS_BIT_COUNT:   (0x0000056e@0050)
+PRBS_ERROR_COUNT: (0x000002eb@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x0000034d@0054)
+PRBS_BIT_COUNT:   (0x000006d1@0050)
+PRBS_ERROR_COUNT: (0x000003a7@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Enable PTT, loopback, and deassert RX invert. Write 0x00000003 to MSK_CONTROL.
+We read MSK_CONTROL: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000784@0050)
+PRBS_ERROR_COUNT: (0x00000405@0054)
+PRBS_BIT_COUNT:   (0x00000835@0050)
+PRBS_ERROR_COUNT: (0x0000045d@0054)
+PRBS_BIT_COUNT:   (0x000008e7@0050)
+PRBS_ERROR_COUNT: (0x0000049b@0054)
+PRBS_BIT_COUNT:   (0x00000999@0050)
+PRBS_ERROR_COUNT: (0x000004df@0054)
+PRBS_BIT_COUNT:   (0x00000a4a@0050)
+PRBS_ERROR_COUNT: (0x0000053a@0054)
+PRBS_BIT_COUNT:   (0x00000afc@0050)
+PRBS_ERROR_COUNT: (0x00000594@0054)
+PRBS_BIT_COUNT:   (0x00000bad@0050)
+PRBS_ERROR_COUNT: (0x000005e2@0054)
+PRBS_BIT_COUNT:   (0x00000c5f@0050)
+PRBS_ERROR_COUNT: (0x00000631@0054)
+PRBS_BIT_COUNT:   (0x00000d11@0050)
+PRBS_ERROR_COUNT: (0x00000690@0054)
+PRBS_BIT_COUNT:   (0x00000dc3@0050)
+PRBS_ERROR_COUNT: (0x000006ea@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.
+Bit 1 is insert error. Bit 0 is PRBS select.
+Write 0x00000009 to PRBS_CONTROL. PRBS active, errors not inserted, PRBS sync.
+We read PRBS_CONTROL: (0x00000009@0040)
+We read PRBS_CONTROL: (0x00000001@0040)
+We read MSK_CONTROL: (0x00000003@000c)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.
+PRBS_BIT_COUNT:   (0x00000093@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000144@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000001f6@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000002a7@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000359@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000040b@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000004bc@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x0000056e@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x00000620@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+PRBS_BIT_COUNT:   (0x000006d1@0050)
+PRBS_ERROR_COUNT: (0x00000000@0054)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Write 0x00000000 to PRBS_CONTROL. Normal operations, errors not inserted, PRBS deactivated.
+We read PRBS_CONTROL: (0x00000000@0040)
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Writing MSK_CONTROL register.
+Writing PTT, bits 0 set. Loopback bit 1 cleared.
+We read MSK_CONTROL: (0x00000001@000c)
+Normal operations, loopback is no longer enabled.
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+* Destroying buffers
+* Disabling streaming channels
+* Destroying context
