@@ -470,7 +470,7 @@ int main (int argc, char **argv)
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < 60; i++) {
 		printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
 	        printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
@@ -500,8 +500,31 @@ int main (int argc, char **argv)
         }
 
 
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("resync PRBS (2nd time) by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
+        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
+        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000009);
+        usleep(num_microseconds);
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
+        usleep(num_microseconds);
+        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
+        usleep(num_microseconds);
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
+        for (i = 0; i < 10; i++) {
+                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                usleep(num_microseconds);
+
+        }
 
 
+
+
+/* old
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
         printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
@@ -522,9 +545,30 @@ int main (int argc, char **argv)
                 usleep(num_microseconds);
 
         }
+*/
+
+//new
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Do not resync at this time, which is bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
+        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+        printf("Write 0x00000003 to PRBS_CONTROL. PRBS active, errors inserted.\n");
+        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000003);
+        usleep(num_microseconds);
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
+        for (i = 0; i < 10; i++) {
+                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                usleep(num_microseconds);
+
+        }
 
 
 
+
+/* old
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
         printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
@@ -545,6 +589,28 @@ int main (int argc, char **argv)
                 usleep(num_microseconds);
 
         }
+*/
+
+
+//new
+//new
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Do not resync at this time, which is bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
+        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+        printf("Write 0x00000001 to PRBS_CONTROL. PRBS active, errors not inserted.\n");
+        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
+        usleep(num_microseconds);
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
+        for (i = 0; i < 10; i++) {
+                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                usleep(num_microseconds);
+
+        }
+
 
 
 
