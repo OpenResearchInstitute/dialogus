@@ -34,7 +34,7 @@
 	} \
 }
 
-//#define STREAMING
+#define STREAMING
 
 
 
@@ -326,6 +326,40 @@ int main (int argc, char **argv)
 	iio_channel_enable(rx0_q);
 	iio_channel_enable(tx0_i);
 	iio_channel_enable(tx0_q);
+
+
+
+        // number of buffers increased from 4 to number in argument below
+	// has to be done before iio_device_create_buffer()
+        int ret = iio_device_set_kernel_buffers_count(rx, 4);
+        if (ret < 0) {
+                char buf_test[256];
+                iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
+                printf("* set_kernel_buffers failed : %s\n", buf_test);
+        }
+	else {
+		printf("* set_kernel_buffers returned %d, which is a success.\n", ret);
+	}
+
+
+/*
+	// set the timeout higher to see if we can get a RX buffer refill without errors
+	// argument is the iio context and the number of milliseconds
+	ret = iio_context_set_timeout(ctx, 10000);
+        if (ret < 0) {
+                char timeout_test[256];
+                iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
+                printf("* set_timout failed : %s\n", timeout_test);
+        }
+        else {
+                printf("* set_timout returned %d, which is a success.\n", ret);
+        }
+
+*/
+
+
+
+
 
 	printf("* Creating non-cyclic IIO buffers with 1 MiS\n");
 	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
@@ -778,9 +812,11 @@ int main (int argc, char **argv)
         printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 	printf("Normal operations, loopback is no longer enabled.\n");
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	
 
+	usleep(num_microseconds);
 
+	// control the timeout on the buffer refill
+	//iio_context_set_timeout();
 
 
 #ifdef STREAMING
