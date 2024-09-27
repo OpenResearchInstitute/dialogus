@@ -34,7 +34,7 @@
 	} \
 }
 
-//#define STREAMING
+#define STREAMING
 
 
 
@@ -103,15 +103,28 @@
 //struct Pluto_MSK_Modem_t msk_register_map;
 //Pluto_MSK_Modem_t msk_register_map;
 
-volatile msk_top_regs_t *msk_register_map = (msk_top_regs_t *)0x43c00000;
+//we need something like this below, but in mmap style
+//volatile msk_top_regs_t *msk_register_map = (msk_top_regs_t *)0x43c00000;
+
+//printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
+//volatile msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
 
+// this is the example code from the RDL documentation
+/*
+#include "example.h"
 
-//dev->my_reg = 1234;
-//for(int i=0; i<8; i++){
-//    dev->block[i].ctrl = 456;
-//    }
+int main void {
+    volatile example_t *dev = 0x42000; // hardware address of example device
 
+    dev->my_reg = 1234;
+    for(int i=0; i<8; i++){
+        dev->block[i].ctrl = 456;
+    }
+
+    return 0;
+}
+*/
 
 
 
@@ -432,14 +445,17 @@ int main (int argc, char **argv)
 
 
 
-        printf("Hello World! Running TX-DMA access tests.\n");  
+        printf("Hello World! Running TX-DMA access tests.\n");
         printf("Opening a character device file in DDR memory.\n");
-        int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);     
+        int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
         printf("Memory map the address of the TX-DMAC via its AXI lite control interface register block.\n");
         unsigned int *dma_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
 
+	printf("RDL Test: Memory map the address of the MSK block via its AXI lite control interface.\n");
+	volatile msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+
         printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
-        unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);     
+        unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
         printf("Create a buffer for some transmitted data.\n");
 	unsigned int transmit_data[4*100];
@@ -876,7 +892,8 @@ MSK_CONTROL), MSK_CONTROL);
 	//printf("second hash ID is (0x%08x@%p)\n", msk_register_map->Hash_ID_High, &(msk_register_map->Hash_ID_High));
         printf("second hash ID address is (%p)\n", &(msk_register_map->Hash_ID_High));
         printf("second hash ID value is (0x%08x)\n", msk_register_map->Hash_ID_High);
-        //printf("second hash ID is (0x%08x@%04x)\n", msk_register_map.Hash_ID_High, &(msk_register_map.Hash_ID_High));
+
+
 
 
 
