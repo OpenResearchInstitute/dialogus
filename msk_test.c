@@ -34,7 +34,10 @@
 	} \
 }
 
-#define STREAMING
+//#define STREAMING
+
+
+
 
 
 
@@ -50,6 +53,14 @@
 #define TX_DMAC_SRC_ADDRESS 0x0414
 #define TX_DMAC_PERIPHERAL_ID 0x004
 #define ENCODER_CONTROL_REGISTER 0x00
+
+
+// For the MSK registers, attempt to use RDL headers
+
+
+
+// Original register #defines
+
 #define HASH_ID_LOW 0x00	//Pluto MSK FPGA Hash ID - Lower 32-bits
 #define HASH_ID_HIGH 0x04 	//Pluto MSK FPGA Hash ID - Upper 32-bits
 #define MSK_INIT 0x08 		//MSK Modem Control 0
@@ -76,6 +87,36 @@
 #define LPF_ACCUM_F2 0x5C	//F2 PI Controller Accumulator
 
 
+
+//attempt to use RDF generated header for register map
+
+#include "msk_top_regs.h"
+
+//all of these cause different errors
+//volatile struct Pluto_MSK_Modem_t *msk_register_map;
+//volatile Pluto_MSK_Modem_t *msk_register_map;
+//struct Pluto_MSK_Modem_t *msk_register_map;
+//Pluto_MSK_Modem_t *msk_register_map;
+
+//volatile struct Pluto_MSK_Modem_t msk_register_map;
+//volatile Pluto_MSK_Modem_t msk_register_map;
+//struct Pluto_MSK_Modem_t msk_register_map;
+//Pluto_MSK_Modem_t msk_register_map;
+
+volatile msk_top_regs_t *msk_register_map = (msk_top_regs_t *)0x43c00000;
+
+
+
+//dev->my_reg = 1234;
+//for(int i=0; i<8; i++){
+//    dev->block[i].ctrl = 456;
+//    }
+
+
+
+
+
+
 float num_microseconds = 1000*20;
 int i; //index variable for loops
 
@@ -89,6 +130,16 @@ unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int valu
 {       virtual_addr[offset>>2] = value;
         return 0;
 }
+
+
+
+
+
+
+
+
+
+
 
 void  dma_interface(unsigned int *virtual_addr)
 {
@@ -270,32 +321,34 @@ int main (int argc, char **argv)
 	signal(SIGINT, handle_sig);
 
 
-
+/*
 	// original RX stream config
 	rxcfg.bw_hz = MHZ(2);   // 2 MHz rf bandwidth
 	rxcfg.fs_hz = MHZ(2.5);   // 2.5 MS/s rx sample rate
 	rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
 	rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
+*/
+
 
         // OPV hardware RX stream config
-//        rxcfg.bw_hz = MHZ(2);   // 2 MHz rf bandwidth
-//        rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
-//        rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
-//        rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
+        rxcfg.bw_hz = MHZ(2);   // 2 MHz rf bandwidth
+        rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
+        rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
 
-
+/*
 	// original TX stream config
 	txcfg.bw_hz = MHZ(1.5); // 1.5 MHz rf bandwidth
 	txcfg.fs_hz = MHZ(2.5);   // 2.5 MS/s tx sample rate
 	txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
 	txcfg.rfport = "A"; // port A (select for rf freq.)
-
+*/
 
         // OPV hardware TX stream config
-//        txcfg.bw_hz = MHZ(1.5); // 1.5 MHz rf bandwidth
-//        txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
-//        txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
-//        txcfg.rfport = "A"; // port A (select for rf freq.)
+        txcfg.bw_hz = MHZ(1.5); // 1.5 MHz rf bandwidth
+        txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
+        txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        txcfg.rfport = "A"; // port A (select for rf freq.)
 
 
 	printf("* Acquiring IIO context\n");
@@ -329,9 +382,9 @@ int main (int argc, char **argv)
 
 
 
-        // number of buffers increased from 4 to number in argument below
+        // number of buffers increased from the default 4 to number in argument below
 	// has to be done before iio_device_create_buffer()
-        int ret = iio_device_set_kernel_buffers_count(rx, 4);
+        int ret = iio_device_set_kernel_buffers_count(tx, 4);
         if (ret < 0) {
                 char buf_test[256];
                 iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
@@ -367,7 +420,10 @@ int main (int argc, char **argv)
 		perror("Could not create RX buffer");
 		shutdown();
 	}
+// original size of the txbuf
 	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
+// experimental size of the txbuf
+//        txbuf = iio_device_create_buffer(tx, 1024*10, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		shutdown();
@@ -523,7 +579,8 @@ int main (int argc, char **argv)
         write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
         usleep(num_microseconds);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, 
+MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
@@ -815,8 +872,12 @@ int main (int argc, char **argv)
 
 	usleep(num_microseconds);
 
-	// control the timeout on the buffer refill
-	//iio_context_set_timeout();
+	printf("-=-= testing RDL memory map interface -=-=\n");
+	//printf("second hash ID is (0x%08x@%p)\n", msk_register_map->Hash_ID_High, &(msk_register_map->Hash_ID_High));
+        printf("second hash ID address is (%p)\n", &(msk_register_map->Hash_ID_High));
+        printf("second hash ID value is (0x%08x)\n", msk_register_map->Hash_ID_High);
+        //printf("second hash ID is (0x%08x@%04x)\n", msk_register_map.Hash_ID_High, &(msk_register_map.Hash_ID_High));
+
 
 
 #ifdef STREAMING
@@ -834,6 +895,10 @@ int main (int argc, char **argv)
 
 
 
+
+
+/*
+
 		// Refill RX buffer
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) { printf("Error refilling buf %d\n",(int) nbytes_rx); shutdown(); }
@@ -848,6 +913,10 @@ int main (int argc, char **argv)
 			((int16_t*)p_dat)[0] = q;
 			((int16_t*)p_dat)[1] = i;
 		}
+
+*/
+
+
 
 
 
