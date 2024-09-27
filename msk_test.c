@@ -197,6 +197,7 @@ static bool stop;
 /* cleanup and exit */
 static void shutdown(void)
 {
+
 	printf("* Destroying buffers\n");
 	if (rxbuf) { iio_buffer_destroy(rxbuf); }
 	if (txbuf) { iio_buffer_destroy(txbuf); }
@@ -428,15 +429,18 @@ int main (int argc, char **argv)
 
 
 	printf("* Creating non-cyclic IIO buffers with 1 MiS\n");
-	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
+// original size of the rxbuf
+//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
+// experimental size of the rxbuf
+        rxbuf = iio_device_create_buffer(rx, 512*1, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		shutdown();
 	}
 // original size of the txbuf
-	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
+//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
 // experimental size of the txbuf
-//        txbuf = iio_device_create_buffer(tx, 1024*10, false);
+        txbuf = iio_device_create_buffer(tx, 512*1, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		shutdown();
@@ -892,8 +896,11 @@ MSK_CONTROL), MSK_CONTROL);
 	//printf("second hash ID is (0x%08x@%p)\n", msk_register_map->Hash_ID_High, &(msk_register_map->Hash_ID_High));
         printf("second hash ID address is (%p)\n", &(msk_register_map->Hash_ID_High));
         printf("second hash ID value is (0x%08x)\n", msk_register_map->Hash_ID_High);
+        // Use AXI stream transfer count register to see if data is getting to our logic
+        printf("AXIS_XFER_COUNT before streaming is (0x%08x)\n", msk_register_map->axis_xfer_count);
 
-
+	int old_data = 0;
+	int new_data = 0;
 
 
 
@@ -908,13 +915,21 @@ MSK_CONTROL), MSK_CONTROL);
 
 		// Schedule TX buffer
 		nbytes_tx = iio_buffer_push(txbuf);
+
+		// Use AXI stream transfer count register to see if data is getting to our logic
+                old_data = new_data;
+                new_data = msk_register_map->axis_xfer_count;
+		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
+//                printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
+
+
 		if (nbytes_tx < 0) { printf("Error pushing buf %d\n", (int) nbytes_tx); shutdown(); }
 
 
 
 
 
-/*
+
 
 		// Refill RX buffer
 		nbytes_rx = iio_buffer_refill(rxbuf);
@@ -931,7 +946,7 @@ MSK_CONTROL), MSK_CONTROL);
 			((int16_t*)p_dat)[1] = i;
 		}
 
-*/
+
 
 
 
@@ -945,8 +960,11 @@ MSK_CONTROL), MSK_CONTROL);
 			// Example: fill with zeros
 			// 12-bit sample needs to be MSB aligned so shift by 4
 			// https://wiki.analog.com/resources/eval/user-guides/ad-fmcomms2-ebz/software/basic_iq_datafiles#binary_format
-			((int16_t*)p_dat)[0] = 0x0800 << 4; // Real (I)
-			((int16_t*)p_dat)[1] = 0x0800 << 4; // Imag (Q)
+			//((int16_t*)p_dat)[0] = 0x0800 << 4; // Real (I)
+			//((int16_t*)p_dat)[1] = 0x0800 << 4; // Imag (Q)
+                        ((int16_t*)p_dat)[0] = 0xAAAA; // Real (I)
+                        ((int16_t*)p_dat)[1] = 0xAAAA; // Imag (Q)
+
 		}
 
 		// Sample counter increment and status output
