@@ -34,8 +34,8 @@
 	} \
 }
 
-#define STREAMING
-
+//#define STREAMING
+#define RF_LOOPBACK
 
 
 
@@ -345,7 +345,7 @@ int main (int argc, char **argv)
 
 
         // OPV hardware RX stream config
-        rxcfg.bw_hz = MHZ(2);   // 2 MHz rf bandwidth
+        rxcfg.bw_hz = MHZ(3);   // 2 MHz rf bandwidth
         rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
         rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
         rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
@@ -359,7 +359,7 @@ int main (int argc, char **argv)
 */
 
         // OPV hardware TX stream config
-        txcfg.bw_hz = MHZ(1.5); // 1.5 MHz rf bandwidth
+        txcfg.bw_hz = MHZ(3); // 1.5 MHz rf bandwidth
         txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
         txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
         txcfg.rfport = "A"; // port A (select for rf freq.)
@@ -409,10 +409,11 @@ int main (int argc, char **argv)
 	}
 
 
+
 /*
 	// set the timeout higher to see if we can get a RX buffer refill without errors
 	// argument is the iio context and the number of milliseconds
-	ret = iio_context_set_timeout(ctx, 10000);
+	ret = iio_context_set_timeout(ctx, 990);
         if (ret < 0) {
                 char timeout_test[256];
                 iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
@@ -427,12 +428,11 @@ int main (int argc, char **argv)
 
 
 
-
 	printf("* Creating non-cyclic IIO buffers with 1 MiS\n");
 // original size of the rxbuf
 //	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
 // experimental size of the rxbuf
-        rxbuf = iio_device_create_buffer(rx, 512*1, false);
+        rxbuf = iio_device_create_buffer(rx, 1024*1, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		shutdown();
@@ -440,7 +440,7 @@ int main (int argc, char **argv)
 // original size of the txbuf
 //	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
 // experimental size of the txbuf
-        txbuf = iio_device_create_buffer(tx, 512*1, false);
+        txbuf = iio_device_create_buffer(tx, 1024*1, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		shutdown();
@@ -481,12 +481,28 @@ int main (int argc, char **argv)
 	printf("Assert INIT: Write 1 to MSK_INIT\n");
 	write_dma(msk_virtual_addr, MSK_INIT, 0x00000001);
 	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+
+
+	//RF loopback
+	#ifdef RF_LOOPBACK
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Writing MSK_CONTROL register.\n");
+        printf("Writing PTT and loopback disabled, bits 0 set, bit 1 cleared.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
+        printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
+	#else
+	//digital loopback
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing MSK_CONTROL register.\n");
 	printf("Writing PTT and loopback enable, bits 0 and 1 set.\n");
 	write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	#endif
+
+
 	printf("Reading the MSK_STATUS register, we see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_STATUS), MSK_STATUS);
 	printf("Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable\n");
 	printf("tx_enable is data to DAC enabled. rx_enable is data from ADC enable.\n");
@@ -501,11 +517,16 @@ int main (int argc, char **argv)
         write_dma(msk_virtual_addr, FB_FREQWORD, 0x0039d036); //for a 61.44 MHz sample rate
         write_dma(msk_virtual_addr, TX_F1_FREQWORD, 0x04be147a); //for a 61.44 MHz sample rate
         write_dma(msk_virtual_addr, TX_F2_FREQWORD, 0x044a740d); //for a 61.44 MHz sample rate
+//        write_dma(msk_virtual_addr, FB_FREQWORD, 0x000E740E); //for a 61.44 MHz sample rate mdt
+//        write_dma(msk_virtual_addr, TX_F1_FREQWORD, 0x012F851F); //for a 61.44 MHz sample rate mdt
+//        write_dma(msk_virtual_addr, TX_F2_FREQWORD, 0x01129D03); //for a 61.44 MHz sample rate mdt
 //        write_dma(msk_virtual_addr, FB_FREQWORD, 0x58CD20A); //for a 2.5 MHz sample rate
 //        write_dma(msk_virtual_addr, TX_F1_FREQWORD, 0x697396D0); //for a 2.5 MHz sample rate
 //        write_dma(msk_virtual_addr, TX_F2_FREQWORD, 0x748D3AE6); //for a 2.5 MHz sample rate
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Writing f1, f2 (values enumerated in github register map for MSK RX).\n");
+//        write_dma(msk_virtual_addr, RX_F1_FREQWORD, 0x012F851F); //for a 61.44 MHz sample rate mdt
+//        write_dma(msk_virtual_addr, RX_F2_FREQWORD, 0x01129D03); //for a 61.44 MHz sample rate mdt
         write_dma(msk_virtual_addr, RX_F1_FREQWORD, 0x04be147a); //for a 61.44 MHz sample rate
         write_dma(msk_virtual_addr, RX_F2_FREQWORD, 0x044a740d); //for a 61.44 MHz sample rate
 //        write_dma(msk_virtual_addr, RX_F1_FREQWORD, 0x697396D0); //for a 2.5 MHz sample rate
@@ -578,6 +599,11 @@ int main (int argc, char **argv)
 	usleep(num_microseconds);
 	write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+
+
+
+
+
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
 	for (i = 0; i < 60; i++) {
@@ -599,8 +625,7 @@ int main (int argc, char **argv)
         write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
         usleep(num_microseconds);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, 
-MSK_CONTROL), MSK_CONTROL);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
@@ -633,32 +658,6 @@ MSK_CONTROL), MSK_CONTROL);
         }
 
 
-
-
-/* old
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
-        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
-        printf("Write 0x0000000b to PRBS_CONTROL. PRBS active, errors inserted, PRBS sync.\n");
-        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x000000b);
-        usleep(num_microseconds);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        usleep(num_microseconds);
-        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000003);
-        usleep(num_microseconds);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
-        for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
-                usleep(num_microseconds);
-
-        }
-*/
-
-//new
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Do not resync at this time, which is bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
         printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
@@ -679,32 +678,7 @@ MSK_CONTROL), MSK_CONTROL);
 
 
 
-/* old
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
-        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
-        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
-        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000009);
-        usleep(num_microseconds);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        usleep(num_microseconds);
-        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
-        usleep(num_microseconds);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
-        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
-        for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
-                usleep(num_microseconds);
 
-        }
-*/
-
-
-//new
-//new
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Do not resync at this time, which is bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
         printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
@@ -726,7 +700,23 @@ MSK_CONTROL), MSK_CONTROL);
 
 
 
+	//RF loopback
+	#ifdef RF_LOOPBACK
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Enable PTT, disable loopback, and assert RX invert. Write 0x00000005 to MSK_CONTROL.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000005);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
+        for (i = 0; i < 10; i++) {
+                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                usleep(num_microseconds);
+        }
+
+	#else
+	//digital loopback
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Enable PTT, loopback, and assert RX invert. Write 0x00000007 to MSK_CONTROL.\n");
         write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
@@ -739,8 +729,7 @@ MSK_CONTROL), MSK_CONTROL);
                 printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
-
-
+	#endif
 
 
 
@@ -816,8 +805,23 @@ MSK_CONTROL), MSK_CONTROL);
 
 
 
+	//RF loopback
+	#ifdef RF_LOOPBACK
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Enable PTT, disable loopback, and deassert RX invert. Write 0x00000001 to MSK_CONTROL.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
+        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
+        for (i = 0; i < 10; i++) {
+                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                usleep(num_microseconds);
+        }
 
+	#else
+	//digital loopback
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Enable PTT, loopback, and deassert RX invert. Write 0x00000003 to MSK_CONTROL.\n");
         write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
@@ -830,7 +834,7 @@ MSK_CONTROL), MSK_CONTROL);
                 printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
-
+	#endif
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -861,31 +865,22 @@ MSK_CONTROL), MSK_CONTROL);
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Write 0x00000000 to PRBS_CONTROL. Normal operations, errors not inserted, PRBS deactivated.\n");
-        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000000);
+//        printf("Write 0x00000000 to PRBS_CONTROL. Normal operations, errors not inserted, PRBS deactivated.\n");
+//        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000000);
+
+        printf("Write 0x00000000 to PRBS_CONTROL. Normal operations, errors not inserted, PRBS activated.\n");
+        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000001);
+
         usleep(num_microseconds);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Writing MSK_CONTROL register.\n");
-        printf("Writing PTT, bits 0 set. Loopback bit 1 cleared.\n");
+        printf("Writing PTT, bits 0 set. Loopback bit 1 set.\n");
         write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
+
         printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 	printf("Normal operations, loopback is no longer enabled.\n");
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -919,7 +914,7 @@ MSK_CONTROL), MSK_CONTROL);
 		// Use AXI stream transfer count register to see if data is getting to our logic
                 old_data = new_data;
                 new_data = msk_register_map->axis_xfer_count;
-		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
+//		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
 //                printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
 
 
@@ -964,7 +959,6 @@ MSK_CONTROL), MSK_CONTROL);
 			//((int16_t*)p_dat)[1] = 0x0800 << 4; // Imag (Q)
                         ((int16_t*)p_dat)[0] = 0xAAAA; // Real (I)
                         ((int16_t*)p_dat)[1] = 0xAAAA; // Imag (Q)
-
 		}
 
 		// Sample counter increment and status output
