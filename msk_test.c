@@ -34,9 +34,12 @@
 	} \
 }
 
+
+//ENDLESS_PRBS will block STREAMING as is
+
 //#define STREAMING
 #define RF_LOOPBACK
-
+#define ENDLESS_PRBS
 
 
 
@@ -347,7 +350,8 @@ int main (int argc, char **argv)
         // OPV hardware RX stream config
         rxcfg.bw_hz = MHZ(3);   // 2 MHz rf bandwidth
         rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
-        rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        //rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        rxcfg.lo_hz = MHZ(905.05); // 905.05 MHz rf frequency
         rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
 
 /*
@@ -361,7 +365,8 @@ int main (int argc, char **argv)
         // OPV hardware TX stream config
         txcfg.bw_hz = MHZ(3); // 1.5 MHz rf bandwidth
         txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
-        txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        //txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
+        txcfg.lo_hz = MHZ(905.05); // 905.05 MHz rf frequency
         txcfg.rfport = "A"; // port A (select for rf freq.)
 
 
@@ -465,10 +470,22 @@ int main (int argc, char **argv)
 	unsigned int transmit_data[4*100];
         dma_interface(dma_virtual_addr);
 
+
+
+
+
+
+
+
 	printf("Writing to scratch register in TX-DMAC.\n");
         write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
         printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
 	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_PERIPHERAL_ID), TX_DMAC_PERIPHERAL_ID);
+
+
+
+
+
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Configure MSK for minimum viable product test.\n");
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -602,16 +619,24 @@ int main (int argc, char **argv)
 
 
 
+	// ENDLESS_PRBS runs PRBS based transmit indefinitely
+	#ifdef ENDLESS_PRBS
+	while(!stop)
+	{
+	#endif
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
 	for (i = 0; i < 60; i++) {
-		printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-	        printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+		//printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+	        //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 	}
-
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+	printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -629,11 +654,18 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
+
+
+
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -651,11 +683,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
+
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -669,11 +706,15 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
 
@@ -690,11 +731,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
+
 
 
 
@@ -710,10 +756,13 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+
 
 	#else
 	//digital loopback
@@ -725,11 +774,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
 	#endif
+
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
 
@@ -748,11 +802,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
+
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -770,11 +829,15 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
 
@@ -796,11 +859,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
+
 
 
 
@@ -815,10 +883,13 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+
 
 	#else
 	//digital loopback
@@ -830,11 +901,16 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
 	#endif
+
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -852,12 +928,14 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read PRBS_BIT_COUNT and PRBS_ERROR_COUNT to see what's going on.\n");
         for (i = 0; i < 10; i++) {
-                printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
-                printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+                //printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+                //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
         }
-
-
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
+        printf("percent error for this segment: (%2.1f)\n", ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/
+(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100);
 
 
 
@@ -878,11 +956,11 @@ int main (int argc, char **argv)
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Writing MSK_CONTROL register.\n");
-        printf("Writing PTT, bits 0 set. Loopback bit 1 set.\n");
+        printf("Writing PTT, bits 0 set. Digital Loopback bit 1 cleared.\n");
         write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
 
         printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
-	printf("Normal operations, loopback is no longer enabled.\n");
+	printf("Normal operations, digital loopback is no longer enabled.\n");
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 	usleep(num_microseconds);
@@ -893,6 +971,14 @@ int main (int argc, char **argv)
         printf("second hash ID value is (0x%08x)\n", msk_register_map->Hash_ID_High);
         // Use AXI stream transfer count register to see if data is getting to our logic
         printf("AXIS_XFER_COUNT before streaming is (0x%08x)\n", msk_register_map->axis_xfer_count);
+
+
+
+	#ifdef ENDLESS_PRBS
+	}
+	#endif
+
+
 
 	int old_data = 0;
 	int new_data = 0;
