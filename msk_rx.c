@@ -43,7 +43,7 @@
 // RX_ACTIVE off chooses the internal digital PRBS loop
 
 //#define STREAMING
-#define RX_ACTIVE
+//#define RX_ACTIVE
 #define ENDLESS_PRBS
 
 
@@ -585,8 +585,21 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Deassert INIT: Write 0 to MSK_INIT\n");
 	usleep(num_microseconds);
+
+
+// Trying to find better LPF gains
+        printf("Writing 31:16 as proportional gain and 15:0 as integral gain.\n");
+        write_dma(msk_virtual_addr, LPF_CONFIG_1, 0x00320028);
+        printf("Reading the LPF_CONFIG_1 register: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_CONFIG_1), LPF_CONFIG_1);
+
+
+
 	write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+
+
+
+
 
 
 
@@ -599,18 +612,22 @@ int main (int argc, char **argv)
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
-	for (i = 0; i < 100; i++) {
+	//printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
+	for (i = 0; i < 50; i++) {
 		//printf("PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
 	        //printf("PRBS_ERROR_COUNT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
                 usleep(num_microseconds);
 	}
-        printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
+        //printf("Total PRBS_BIT_COUNT for loop:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
         //printf("Total PRBS_ERROR_COUNT for loop: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_COUNT), PRBS_ERROR_COUNT);
 	percent_error = ((double)(read_dma(msk_virtual_addr, PRBS_ERROR_COUNT))/(double)(read_dma(msk_virtual_addr, PRBS_BIT_COUNT)))*100;
-	printf("percent error for this segment: (%2.1f)\n", percent_error);
+	//printf("percent error for this segment: (%2.1f)\n", percent_error);
+	//printf("LPF_Accum_F1 for this segment:  (0x%08x)\n", msk_register_map->LPF_Accum_F1);
+        //printf("LPF_Accum_F2 for this segment:  (0x%08x)\n", msk_register_map->LPF_Accum_F2);
+        printf("%2.1f %d %d\n", percent_error, (int32_t) msk_register_map->LPF_Accum_F1, (int32_t) msk_register_map->LPF_Accum_F2);
 
-	if (percent_error > 25.0){
+
+	if (percent_error > 49.0){
 	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("percent_error was greater than 25 percent so we resync.\n");
 	        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
