@@ -650,10 +650,12 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int16_t proportional_gain = 0x0008;
+	int16_t proportional_gain = 0x0009;
 	int16_t integral_gain = 0x0008;
 	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 	printf("lpf_config is (0x%08x)\n",lpf_config);
+        write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
+
 
 	//loop variables
 	int max_no_zeros = 0;
@@ -694,8 +696,7 @@ msk_register_map->LPF_Config_1);
 		if (percent_error > 49.0){
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("percent_error was greater than 49.0 percent so we resync.\n");
-		        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
-		        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+		        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL.\n");
 		        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
 		        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000009);
 		        usleep(num_microseconds);
@@ -707,12 +708,36 @@ msk_register_map->LPF_Config_1);
 		        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
+			printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
+			if( (read_dma(msk_virtual_addr, MSK_CONTROL)) == 7){
+				write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
+				}
+			else {
+				write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
+			}
+			usleep(num_microseconds);
+                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
+
+
 			max_no_zeros++;
 			if(max_no_zeros > 20){
-				proportional_gain = proportional_gain - 1;
+				//proportional_gain = proportional_gain + 1;
+				integral_gain = integral_gain + 1;
 	        		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 				write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
 				max_no_zeros = 0;
+
+
+        			printf("Assert INIT: Write 1 to MSK_INIT\n");
+        			write_dma(msk_virtual_addr, MSK_INIT, 0x00000001);
+        			printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+				usleep(num_microseconds);
+        			printf("De-Assert INIT: Write 0 to MSK_INIT\n");
+        			write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
+        			printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+				usleep(25); // delay only a very short time before zeroing out the accumulators
 
 
 
@@ -734,8 +759,6 @@ msk_register_map->LPF_Config_1);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 
-
-                               usleep(num_microseconds);
                                 write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000000);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("READ IMMEDIATELY AFTER LPF_CONFIG_0 BIT 1 CLEARED.\n");
@@ -765,9 +788,8 @@ msk_register_map->LPF_Config_1);
 
 
 	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                        printf("max_no_zeros exceeded. Giving up on this gain, incremented it, and now resynching..\n");
-	                        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
-	                        printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+	                        printf("max_no_zeros exceeded. Giving up on this gain.\n");
+	                        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL.\n");
 	                        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
 	                        write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000009);
 	                        usleep(num_microseconds);
@@ -814,6 +836,7 @@ msk_register_map->LPF_Config_1);
 
 			if(spectacular_success > 20) {
 				spectacular_success = 0;
+				printf("Paul, we had a good run.\n");
 				break;
 				}
 
@@ -822,9 +845,21 @@ msk_register_map->LPF_Config_1);
 
 
 
-		proportional_gain = proportional_gain - 1;
+		//proportional_gain = proportional_gain + 1;
+		integral_gain = integral_gain + 1;
 		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
-                write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
+                write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config); //do we need a delay after this? (No)
+
+
+                printf("Assert INIT: Write 1 to MSK_INIT\n");
+                write_dma(msk_virtual_addr, MSK_INIT, 0x00000001);
+                printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+                usleep(num_microseconds);
+                printf("De-Assert INIT: Write 0 to MSK_INIT\n");
+                write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
+                printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+                usleep(25); // delay only a very short time before zeroing out the accumulators
+
 
 
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -843,9 +878,8 @@ msk_register_map->LPF_Config_1);
 
 
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("gains updated after successfully getting some zero percent error for a while.\n");
-                printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL. Bit 2 clears counters.\n");
-                printf("Bit 1 is insert error. Bit 0 is PRBS select.\n");
+                printf("gains updated after we see some zero percent error.\n");
+                printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL\n");
                 printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
                 write_dma(msk_virtual_addr, PRBS_CONTROL, 0x0000009);
                 usleep(num_microseconds);
@@ -863,21 +897,6 @@ msk_register_map->LPF_Config_1);
 	#ifdef ENDLESS_PRBS
 	}
 	#endif
-
-
-
-/*
-
-                // Trying to find better LPF gains
-                printf("Writing 31:16 as proportional gain and 15:0 as integral gain.\n");
-                //write_dma(msk_virtual_addr, LPF_CONFIG_1, 0x00320028);
-                write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
-                printf("Reading the LPF_CONFIG_1 register: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_CONFIG_1), LPF_CONFIG_1);
-
-*/
-
-
-
 
 
 
