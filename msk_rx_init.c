@@ -694,6 +694,20 @@ msk_register_map->LPF_Config_1);
 
 
 		if (percent_error > 49.0){
+
+                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+                        printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
+                        if( (read_dma(msk_virtual_addr, MSK_CONTROL)) == 7){
+                                write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
+                                }
+                        else {
+                                write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
+                        }
+                        usleep(num_microseconds);
+                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
+
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("percent_error was greater than 49.0 percent so we resync.\n");
 		        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL.\n");
@@ -707,19 +721,6 @@ msk_register_map->LPF_Config_1);
 		        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
 		        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-			printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
-			if( (read_dma(msk_virtual_addr, MSK_CONTROL)) == 7){
-				write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
-				}
-			else {
-				write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
-			}
-			usleep(num_microseconds);
-                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-
 
 			max_no_zeros++;
 			if(max_no_zeros > 20){
