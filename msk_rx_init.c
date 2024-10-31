@@ -43,11 +43,11 @@
 // we can have RX_ACTIVE with STREAMING
 // we can have RX_ACTIVE with ENDLESS_PRBS
 // since they are different while loops, it's one or the other
-// RX_ACTIVE off chooses the internal digital PRBS loop
-// RX_ACTIVE has PTT off and loopback on. 
+// RX_ACTIVE off chooses the internal digital PRBS loopback.
+// RX_ACTIVE on has PTT off and loopback off.
 // RF_LOOPBACK has PTT on and loopback off.
 // RF_LOOPBACK is used for physically looping back TX to RX
-// with a cable and an attentuator.  
+// with a cable and an attentuator.
 
 //#define STREAMING
 //#define RX_ACTIVE
@@ -483,7 +483,7 @@ int main (int argc, char **argv)
 	//Receiver Active
 	#ifdef RX_ACTIVE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Writing MSK_CONTROL register.\n");
+        printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver only.\n");
 //        printf("PTT and loopback disabled, bits 0 and 1 cleared, no samples discarded.\n");
 //        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000000);
 	printf("PTT and loopback disabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
@@ -494,10 +494,10 @@ int main (int argc, char **argv)
 	#else
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Writing MSK_CONTROL register.\n");
-//	printf("Writing PTT and loopback enabled, bits 0 and 1 set.\n");
+	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
+//	printf("Writing PTT, loopback, rx_invert enabled, bits 0,1,2 set.\n");
 //	write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
-        printf("PTT and loopback enabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
+        printf("PTT,loopback, rx_invert enabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
         write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001907);
 //        printf("Test write coverage of MSK_CONTROL.\n");
 //        write_dma(msk_virtual_addr, MSK_CONTROL, 0x0000FF07);
@@ -507,7 +507,7 @@ int main (int argc, char **argv)
 
 	#ifdef RF_LOOPBACK
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Writing MSK_CONTROL register.\n");
+        printf("RF_LOOPACK on: Writing MSK_CONTROL register for RF loopback.\n");
 //        printf("PTT enabled and loopback disabled, bits 0 set and 1 cleared, no samples discarded.\n");
 //        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
         printf("PTT enabled and loopback disabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
@@ -534,7 +534,7 @@ int main (int argc, char **argv)
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Writing fb, f1, f2 (values enumerated in github register map for MSK TX).\n");
+	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
 	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, rx_sample_rate, tx_rx_sample_ratio;
 
@@ -561,13 +561,11 @@ int main (int argc, char **argv)
 
 
         printf("FB_FREQWORD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, FB_FREQWORD), FB_FREQWORD);
-	printf("expecting to see: %f float cast as uint32_t: %d \n", br_fcw, (uint32_t) br_fcw);
+        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", br_fcw, (uint32_t) br_fcw);
         printf("TX_F1_FREQWORD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, TX_F1_FREQWORD), TX_F1_FREQWORD);
-	printf("expecting to see: %f \n", f1_fcw_tx);
+        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_tx, (uint32_t) f1_fcw_tx);
         printf("TX_F2_FREQWORD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, TX_F2_FREQWORD), TX_F2_FREQWORD);
-	printf("expecting to see: %f \n", f2_fcw_tx);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
+        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_tx, (uint32_t) f2_fcw_tx);
 
         //write_dma(msk_virtual_addr, FB_FREQWORD, 0x0039d036); //for a 61.44 MHz sample rate
         //write_dma(msk_virtual_addr, TX_F1_FREQWORD, 0x04be147a); //for a 61.44 MHz sample rate
@@ -575,13 +573,15 @@ int main (int argc, char **argv)
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Writing f1, f2 (values enumerated in github register map for MSK RX).\n");
+        printf("Writing f1, f2 (values are calculated for MSK RX).\n");
 
-        write_dma(msk_virtual_addr, RX_F1_FREQWORD, (uint32_t) f1_fcw_rx); //for a 61.44 MHz sample rate
-        write_dma(msk_virtual_addr, RX_F2_FREQWORD, (uint32_t) f2_fcw_rx); //for a 61.44 MHz sample rate
+        write_dma(msk_virtual_addr, RX_F1_FREQWORD, (uint32_t) f1_fcw_rx); 
+        write_dma(msk_virtual_addr, RX_F2_FREQWORD, (uint32_t) f2_fcw_rx); 
 
         printf("RX_F1_FREQWORD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, RX_F1_FREQWORD), RX_F1_FREQWORD);
+        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_rx, (uint32_t) f1_fcw_rx);
         printf("RX_F2_FREQWORD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, RX_F2_FREQWORD), RX_F2_FREQWORD);
+        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_rx, (uint32_t) f2_fcw_rx);
 
 
         //write_dma(msk_virtual_addr, RX_F1_FREQWORD, 0x04be147a); //for a 61.44 MHz sample rate
@@ -605,7 +605,7 @@ int main (int argc, char **argv)
 	printf("Writing 0x00000000 as filter roll off.\n");
 	//old number from before times
 //        write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00020000);
-        write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000002); //hold accumulators at zero
+        write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000002); //zero and hold accumulators
 
 	write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000000); //accumulators in normal operation
 	printf("Writing a default value as proportional gain and a default value as integral gain.\n");
@@ -671,19 +671,26 @@ int main (int argc, char **argv)
 	printf("Write 0x00000001 to PRBS_ERROR_MASK.\n");
         write_dma(msk_virtual_addr, PRBS_ERROR_MASK, 0x00000001);
         printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_ERROR_MASK), PRBS_ERROR_MASK);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Deassert INIT: Write 0 to MSK_INIT\n");
-	usleep(num_microseconds);
-	write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
-	printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
 
 
 	//initial values of parameterized LPF_CONFIG are set up here 0x00090008 previous value
-	int16_t proportional_gain = 0x000f;
-	int16_t integral_gain = 0x002f;
+	int16_t proportional_gain = 0x0040;
+	int16_t integral_gain = 0x0010;
 	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
-	printf("lpf_config is (0x%08x)\n",lpf_config);
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Write proportional and integral gains to LPF_CONFIG_1.\n");
+	printf("The value we write is (0x%08x)\n",lpf_config);
         write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
+
+
+
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("Deassert INIT: Write 0 to MSK_INIT\n");
+        usleep(num_microseconds);
+        write_dma(msk_virtual_addr, MSK_INIT, 0x00000000);
+        printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+
+
 
 
 	//loop variables
@@ -707,7 +714,7 @@ int main (int argc, char **argv)
 
 
 	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		printf("100 buckets of bits on the bus.\n"); //start a timestamp? nothing worked so far.
+		printf("100 buckets of bits on the bus.\n");
 
 		for (i = 0; i < 10000; i++) {
 			//printf("(1)PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
@@ -738,17 +745,9 @@ msk_register_map->LPF_Config_1);
 
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                         printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
-                        if( (read_dma(msk_virtual_addr, MSK_CONTROL)) == 0x00001907){
-                        //if( (read_dma(msk_virtual_addr, MSK_CONTROL)) == 7){
-        			printf("PTT and loopback enabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
-        			write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001903);
-                                //write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000003);
-                                }
-                        else {
-                                printf("PTT and loopback enabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
-                                write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001907);
-				//write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
-                        }
+
+			write_dma(msk_virtual_addr, MSK_CONTROL,(read_dma(msk_virtual_addr, MSK_CONTROL)^0x00000004));
+
                         usleep(num_microseconds);
                         printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 
@@ -812,41 +811,13 @@ msk_register_map->LPF_Config_1);
                                 write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000002);
                                 usleep(num_microseconds);
                                 printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_CONFIG_0), LPF_CONFIG_0);
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("READ DURING LPF_CONFIG_0 BIT 1 HELD HIGH\n");
-        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F1), LPF_ACCUM_F1);
-        printf("PI conotroller accumulator value.\n");
-        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F2), LPF_ACCUM_F2);
-        printf("PI conotroller accumulator value.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-
                                 write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000000);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("READ IMMEDIATELY AFTER LPF_CONFIG_0 BIT 1 CLEARED.\n");
-        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F1), LPF_ACCUM_F1);
-        printf("PI conotroller accumulator value.\n");
-        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F2), LPF_ACCUM_F2);
-        printf("PI conotroller accumulator value.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
                                 usleep(num_microseconds);
-
                                 printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_CONFIG_0), LPF_CONFIG_0);
-
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("READ AFTER A DELAY AFTER CLEARING LPF_CONFIG_0 BIT 1\n");
-        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F1), LPF_ACCUM_F1);
-        printf("PI conotroller accumulator value.\n");
-        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F2), LPF_ACCUM_F2);
-        printf("PI conotroller accumulator value.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-
-
-
+			        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F1), LPF_ACCUM_F1);
+			        printf("F1 PI controller accumulator value.\n");
+			        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, LPF_ACCUM_F2), LPF_ACCUM_F2);
+			        printf("F2 PI controller accumulator value.\n");
 
 
 
@@ -876,13 +847,12 @@ msk_register_map->LPF_Config_1);
         	                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_CONTROL), PRBS_CONTROL);
         	                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                		        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+				} //end of if MAX_NO_ZEROS > 20
+			}// end of if percent_error > 49.0
+	}// end of while percent_error > 0.1
+	printf("fell out of while percent_error > 0.1 (hey, low error!) \n");
 
 
-
-				}
-			}
-	}
-	printf("fell out of while percent_error != 0. \n");
 
 	spectacular_success = 0;
 
@@ -943,7 +913,7 @@ msk_register_map->LPF_Config_1);
 
 
 
-			}
+			} //end of while percent_error < 49.0
 
 
 
