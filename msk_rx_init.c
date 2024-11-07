@@ -51,7 +51,7 @@
 
 //#define STREAMING
 //#define RX_ACTIVE
-//#define RF_LOOPBACK
+#define RF_LOOPBACK
 #define ENDLESS_PRBS
 
 
@@ -101,7 +101,8 @@
 #define PRBS_ERROR_COUNT 0x54	//PRBS Status 1
 #define LPF_ACCUM_F1 0x58 	//F1 PI Controller Accumulator
 #define LPF_ACCUM_F2 0x5C	//F2 PI Controller Accumulator
-
+#define AXIS_XFER_COUNT 0x60   //AXI Stream transfer counter
+#define RX_SAMPLE_DISCARD 0x64  //receiver sample discard values
 
 
 //attempt to use RDF generated header for register map
@@ -122,17 +123,24 @@ unsigned int read_dma(unsigned int *virtual_addr, int offset)
         return virtual_addr[offset>>2];
 }
 
+//read a value from the MSK register
+//value = READ_MSK(MSK_Init);
+#define READ_MSK(offset) (msk_register_map->offset)
+
+
 unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int value)
 {       virtual_addr[offset>>2] = value;
         return 0;
 }
 
 
+//write a value to the MSK register
+//WRITE_MSK(MSK_Init, 0x00000001);
+#define WRITE_MSK(offset, value) msk_register_map->offset = value
 
-
-
-
-
+//return offset of the MSK register
+//value = OFFSET_MSK(MSK_Init);
+#define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
 
 
 
@@ -457,6 +465,9 @@ int main (int argc, char **argv)
 
 
 
+
+
+
 	printf("Writing to scratch register in TX-DMAC.\n");
         write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
         printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
@@ -469,14 +480,17 @@ int main (int argc, char **argv)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Configure MSK for minimum viable product test.\n");
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Reading from MSK block HASH ID LOW: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, HASH_ID_LOW), HASH_ID_LOW);
-        printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, HASH_ID_HIGH), HASH_ID_HIGH);
+        printf("Reading from MSK block HASH ID LOW: (0x%08x@%04x)\n", READ_MSK(Hash_ID_Low), OFFSET_MSK(Hash_ID_Low));
+        printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", READ_MSK(Hash_ID_High), OFFSET_MSK(Hash_ID_High));
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Initialize MSK block.\n");
-	printf("Read MSK_INIT: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
+	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 	printf("bit 0: 0 is normal operation and 1 is initialize modem (reset condition).\n");
 	printf("Assert INIT: Write 1 to MSK_INIT\n");
-	write_dma(msk_virtual_addr, MSK_INIT, 0x00000001);
+	//write_dma(msk_virtual_addr, MSK_INIT, 0x00000001);
+        //write_dma(msk_register_map, offsetof(msk_top_regs_t, MSK_Init), 0x00000001);
+	WRITE_MSK(MSK_Init, 0x00000001);
+
 	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_INIT), MSK_INIT);
 
 
@@ -484,10 +498,10 @@ int main (int argc, char **argv)
 	#ifdef RX_ACTIVE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver only.\n");
-//        printf("PTT and loopback disabled, bits 0 and 1 cleared, no samples discarded.\n");
+//        printf("PTT and loopback disabled, bits 0 and 1 cleared.\n");
 //        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000000);
-	printf("PTT and loopback disabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
-        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001900);
+	printf("PTT and loopback disabled.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000000);
         printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
@@ -495,12 +509,8 @@ int main (int argc, char **argv)
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
-//	printf("Writing PTT, loopback, rx_invert enabled, bits 0,1,2 set.\n");
-//	write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
-        printf("PTT,loopback, rx_invert enabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
-        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001907);
-//        printf("Test write coverage of MSK_CONTROL.\n");
-//        write_dma(msk_virtual_addr, MSK_CONTROL, 0x0000FF07);
+        printf("PTT,loopback, rx_invert enabled.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000007);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	#endif
@@ -508,10 +518,8 @@ int main (int argc, char **argv)
 	#ifdef RF_LOOPBACK
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("RF_LOOPACK on: Writing MSK_CONTROL register for RF loopback.\n");
-//        printf("PTT enabled and loopback disabled, bits 0 set and 1 cleared, no samples discarded.\n");
-//        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
-        printf("PTT enabled and loopback disabled, 24 samples (0x19) discarded (61.44 MHz to 2.5 MHz)\n");
-        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00001901);
+        printf("PTT enabled and loopback disabled.\n");
+        write_dma(msk_virtual_addr, MSK_CONTROL, 0x00000001);
         printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
@@ -542,7 +550,7 @@ int main (int argc, char **argv)
 	bitrate = 54200;
 	freq_if = (bitrate/4)*32;
 	tx_sample_rate = 61440000;
-	tx_rx_sample_ratio = 25;
+	tx_rx_sample_ratio = 1;
 	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;
 
 	delta_f = bitrate/4;
@@ -610,7 +618,7 @@ int main (int argc, char **argv)
 	write_dma(msk_virtual_addr, LPF_CONFIG_0, 0x00000000); //accumulators in normal operation
 	printf("Writing a default value as proportional gain and a default value as integral gain.\n");
         //write_dma(msk_virtual_addr, LPF_CONFIG_1, 0x00080008);
-        write_dma(msk_virtual_addr, LPF_CONFIG_1, 0x00080008);
+        write_dma(msk_virtual_addr, LPF_CONFIG_1, 0x01000000);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
         printf("We see: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, TX_DATA_WIDTH), TX_DATA_WIDTH);
@@ -674,13 +682,19 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here 0x00090008 previous value
-	int16_t proportional_gain = 0x0040;
-	int16_t integral_gain = 0x0010;
+	int16_t proportional_gain = 0x0001;
+	int16_t integral_gain = 0x0000;
 	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_1.\n");
 	printf("The value we write is (0x%08x)\n",lpf_config);
         write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
+
+	//discard 24 receiver samples 
+	write_dma(msk_virtual_addr, RX_SAMPLE_DISCARD, 0x00001919);
+	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, RX_SAMPLE_DISCARD), RX_SAMPLE_DISCARD);
+	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
+
 
 
 
@@ -714,7 +728,7 @@ int main (int argc, char **argv)
 
 
 	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		printf("100 buckets of bits on the bus.\n");
+		printf("100 (or more) buckets of bits on the bus.\n");
 
 		for (i = 0; i < 10000; i++) {
 			//printf("(1)PRBS_BIT_COUNT:   (0x%08x@%04x)\n", read_dma(msk_virtual_addr, PRBS_BIT_COUNT), PRBS_BIT_COUNT);
@@ -749,7 +763,9 @@ msk_register_map->LPF_Config_1);
 			write_dma(msk_virtual_addr, MSK_CONTROL,(read_dma(msk_virtual_addr, MSK_CONTROL)^0x00000004));
 
                         usleep(num_microseconds);
-                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
+			//usleep(num_microseconds*1000); //test increasing this delay
+
+			printf("We read MSK_CONTROL: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, MSK_CONTROL), MSK_CONTROL);
 
 
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -783,8 +799,8 @@ msk_register_map->LPF_Config_1);
 
 			max_no_zeros++;
 			if(max_no_zeros > 20){
-				//proportional_gain = proportional_gain + 1;
-				integral_gain = integral_gain + 1;
+				proportional_gain = proportional_gain + 1;
+				//integral_gain = integral_gain + 1;
 	        		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 				write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config);
 				max_no_zeros = 0;
@@ -904,7 +920,7 @@ msk_register_map->LPF_Config_1);
 
 			spectacular_success++;
 
-			if(spectacular_success > 1000) {
+			if(spectacular_success > 20) {
 				spectacular_success = 0;
 				printf("Paul, we had a good run.\n");
 				printf("(3) %2.1f %d %d 0x%08x\n", percent_error, (int32_t) msk_register_map->LPF_Accum_F1, (int32_t) msk_register_map->LPF_Accum_F2, msk_register_map->LPF_Config_1);
@@ -917,8 +933,8 @@ msk_register_map->LPF_Config_1);
 
 
 
-		//proportional_gain = proportional_gain + 1;
-		integral_gain = integral_gain + 1;
+		proportional_gain = proportional_gain + 1;
+		//integral_gain = integral_gain + 1;
 		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
                 write_dma(msk_virtual_addr, LPF_CONFIG_1, lpf_config); //do we need a delay after this? (No)
 
@@ -1011,7 +1027,7 @@ msk_register_map->LPF_Config_1);
                 old_data = new_data;
                 new_data = msk_register_map->axis_xfer_count;
 //		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
-//                printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
+//              printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
 
 
 		if (nbytes_tx < 0) { printf("Error pushing buf %d\n", (int) nbytes_tx); shutdown(); }
