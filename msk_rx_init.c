@@ -772,8 +772,8 @@ int main (int argc, char **argv)
                                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                                 printf("max_without_zeros exceeded. Giving up on this gain.\n");
 
-        			printf("Assert INIT: Write 1 to MSK_INIT\n");
-        			WRITE_MSK(MSK_Init, 0x00000001);
+        			printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
+        			WRITE_MSK(MSK_Init, 0x00000004);
         			printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 				usleep(num_microseconds);
         			printf("De-Assert INIT: Write 0 to MSK_INIT\n");
@@ -895,9 +895,11 @@ int main (int argc, char **argv)
 		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
                 WRITE_MSK(LPF_Config_1, lpf_config);
 
+//somewhere in here in this point in the code, something seems to fix the split spectrum
 
-                printf("Assert INIT: Write 1 to MSK_INIT\n");
-                WRITE_MSK(MSK_Init, 0x00000001);
+
+                printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
+                WRITE_MSK(MSK_Init, 0x00000004);
                 printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
                 usleep(num_microseconds);
                 printf("De-Assert INIT: Write 0 to MSK_INIT\n");
