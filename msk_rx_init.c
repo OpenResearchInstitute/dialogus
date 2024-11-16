@@ -51,7 +51,7 @@
 
 //#define STREAMING
 //#define RX_ACTIVE
-#define RF_LOOPBACK
+//#define RF_LOOPBACK
 #define ENDLESS_PRBS
 
 
@@ -577,13 +577,13 @@ int main (int argc, char **argv)
 
 
 
-/*
+
 	WRITE_MSK(LPF_Config_0, 0x00000002); //zero and hold accumulators
 	usleep(num_microseconds);
 	WRITE_MSK(LPF_Config_0, 0x00000000); //accumulators in normal operation
 	printf("Writing a default value as proportional gain and a default value as integral gain.\n");
-	WRITE_MSK(LPF_Config_1, 0x01000000);
-*/
+	WRITE_MSK(LPF_Config_1, 0x01000016);
+
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
         printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
@@ -607,8 +607,9 @@ int main (int argc, char **argv)
 	printf("bit 0 is PRBS data select. 0 is normal data transmit and 1 is PRBS transmit.\n");
 	printf("bit 1 is PRBS error insert. 0 is no error insertion and 1 inserts a bit error in transmit.\n");
 	printf("NOTE: error is inserted in both normal and PRBS data selection modes.\n");
-	printf("bit 2 is PRBS clear. This is reserved.\n");
-	printf("bit 3 is PRBS sync. 0 is normal operations. 1 synchronizes PRBS monitor.\n"); 
+	printf("bit 2 clears PRBS counters.\n");
+	printf("bit 3 transition is a manual PRBS sync.\n");
+	printf("bit 31:16 prbs_sync_threshold.\n"); 
         printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 	printf("This is the PRBS seed value. It sets the starting value of the PRBS generator.\n");
         printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
@@ -651,8 +652,8 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int16_t proportional_gain = 0x0001;
-	int16_t integral_gain = 0x0000;
+	int16_t proportional_gain = 0x0100;
+	int16_t integral_gain = 0x0001;
 	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_1.\n");
@@ -664,8 +665,6 @@ int main (int argc, char **argv)
 	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", READ_MSK(axis_xfer_count), OFFSET_MSK(axis_xfer_count));
 
 	//discard 24 receiver samples and 24 NCO Samples
-//	write_dma(msk_virtual_addr, 0x64, 0x00001919);
-//	WRITE_MSK(Rx_Sample_Discard, 0xA5A5A5A5);
 	WRITE_MSK(Rx_Sample_Discard, 0x00001919);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
@@ -710,8 +709,8 @@ int main (int argc, char **argv)
 	                usleep(num_microseconds);
 		}
 
-	        printf("Total PRBS_BIT_COUNT for loop (1):   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-	        printf("Total PRBS_ERROR_COUNT for loop (1): (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+	        printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+	        printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
 		percent_error = (   (double)(READ_MSK(PRBS_Error_Count))  /  (double)(READ_MSK(PRBS_Bit_Count))    )*100;
 		printf("(1) %2.1f %d %d 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_1));
 
@@ -733,25 +732,15 @@ int main (int argc, char **argv)
 
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("percent_error was greater than 49.0 percent so we resync.\n");
-		        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL.\n");
-		        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
-		        WRITE_MSK(PRBS_Control, 0x0000009);
-		        usleep(num_microseconds);
-		        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-		        usleep(num_microseconds);
-		        WRITE_MSK(PRBS_Control, 0x0000001);
+		        printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+		        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
 		        usleep(num_microseconds);
 		        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                         printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-			printf("Set and clear bit 2 of PRBS_CONTROL.\n");
-			printf("Write 0x00000005 to PRBS_CONTROL. PRBS active, no errors inserted, counter reset.\n");
-                        WRITE_MSK(PRBS_Control, 0x0000005);
-                        usleep(num_microseconds);
-                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                        usleep(num_microseconds);
-                        WRITE_MSK(PRBS_Control, 0x0000001);
+			printf("Toggle bit 2 of PRBS_CONTROL.\n");
+                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
                         usleep(num_microseconds);
                         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -763,8 +752,8 @@ int main (int argc, char **argv)
 			max_without_zeros++;
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				proportional_gain = proportional_gain + 1;
-				//integral_gain = integral_gain + 1;
+				//proportional_gain = proportional_gain + 1;
+				integral_gain = integral_gain + 1;
 	        		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 				WRITE_MSK(LPF_Config_1, lpf_config);
 				max_without_zeros = 0;
@@ -801,32 +790,26 @@ int main (int argc, char **argv)
 
 
 
-	                	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                        printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL.\n");
-	                        printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
-	                        WRITE_MSK(PRBS_Control, 0x0000009);
+	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	                        printf("percent_error was greater than 49.0 percent so we resync.\n");
+	                        printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+	                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
 	                        usleep(num_microseconds);
 	                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-	                        usleep(num_microseconds);
-	                        WRITE_MSK(PRBS_Control, 0x0000001);
+
+	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	                        printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
+	                        printf("Toggle bit 2 of PRBS_CONTROL.\n");
+	                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
 	                        usleep(num_microseconds);
 	                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
 
-	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        	                printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-        	                printf("Set and clear bit 2 of PRBS_CONTROL.\n");
-        	                printf("Write 0x00000005 to PRBS_CONTROL. PRBS active, no errors inserted, counter reset.\n");
-        	                WRITE_MSK(PRBS_Control, 0x0000005);
-        	                usleep(num_microseconds);
-        	                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-        	                usleep(num_microseconds);
-        	                WRITE_MSK(PRBS_Control, 0x0000001);
-        	                usleep(num_microseconds);
-        	                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-        	                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-               		        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+
+
+
 				} //end of if MAX_WITHOUT_ZEROS > 20
 			}// end of if percent_error > 49.0
 	}// end of while percent_error > 0.1
@@ -846,16 +829,15 @@ int main (int argc, char **argv)
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                         printf("less than 49.0 percent error here.\n");
 			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
+
                         printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-                        printf("Set and clear bit 2 of PRBS_CONTROL.\n");
-                        printf("Write 0x00000005 to PRBS_CONTROL. PRBS active, no errors inserted, counter reset.\n");
-                        WRITE_MSK(PRBS_Control, 0x0000005);
+                        printf("Toggle bit 2 of PRBS_CONTROL.\n");
+                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
                         usleep(num_microseconds);
                         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                        usleep(num_microseconds);
-                        WRITE_MSK(PRBS_Control, 0x0000001);
-                        usleep(num_microseconds);
-                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 
@@ -865,8 +847,8 @@ int main (int argc, char **argv)
                         	usleep(num_microseconds);
 				}
 
-	                printf("Total PRBS_BIT_COUNT for loop (2):   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-	                printf("Total PRBS_ERROR_COUNT for loop (2): (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+	                printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+	                printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
 	                percent_error = ((double)(READ_MSK(PRBS_Error_Count))/(double)(READ_MSK(PRBS_Bit_Count)))*100;
                         printf("(2) %2.1f %d %d 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_1));
 
@@ -890,8 +872,8 @@ int main (int argc, char **argv)
 
 
 		//time to test one or both of new PI gains
-		proportional_gain = proportional_gain + 1;
-		//integral_gain = integral_gain + 1;
+		//proportional_gain = proportional_gain + 1;
+		integral_gain = integral_gain + 1;
 		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
                 WRITE_MSK(LPF_Config_1, lpf_config);
 
@@ -926,30 +908,25 @@ int main (int argc, char **argv)
 
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("gains updated after we see some zero percent error.\n");
-                printf("resync PRBS by setting and then clearing bit 3 of PRBS_CONTROL\n");
-                printf("Write 0x00000009 to PRBS_CONTROL. PRBS active, no errors inserted, PRBS sync.\n");
-                WRITE_MSK(PRBS_Control, 0x0000009);
+
+
+
+                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+                printf("percent_error was greater than 49.0 percent so we resync.\n");
+                printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+                WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
                 usleep(num_microseconds);
                 printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                usleep(num_microseconds);
-                WRITE_MSK(PRBS_Control, 0x0000001);
-                usleep(num_microseconds);
-                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-                printf("Set and clear bit 2 of PRBS_CONTROL.\n");
-                printf("Write 0x00000005 to PRBS_CONTROL. PRBS active, no errors inserted, counter reset.\n");
-                WRITE_MSK(PRBS_Control, 0x0000005);
-                usleep(num_microseconds);
-                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                usleep(num_microseconds);
-                WRITE_MSK(PRBS_Control, 0x0000001);
+                printf("Toggle bit 2 of PRBS_CONTROL.\n");
+                WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
                 usleep(num_microseconds);
                 printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+
 
 
 
