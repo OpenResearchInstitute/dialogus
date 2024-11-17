@@ -653,7 +653,7 @@ int main (int argc, char **argv)
 
 	//initial values of parameterized LPF_CONFIG are set up here
 	int16_t proportional_gain = 0x0100;
-	int16_t integral_gain = 0x0001;
+	int16_t integral_gain = 0x0200;
 	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_1.\n");
@@ -747,19 +747,19 @@ int main (int argc, char **argv)
                         printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
 
+                        max_without_zeros++;
+			//printf("Increment max_without_zeros here.\nmax_without_zeros now equals: %d\n", max_without_zeros);
 
-
-			max_without_zeros++;
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
 				//proportional_gain = proportional_gain + 1;
-				integral_gain = integral_gain + 1;
+				integral_gain = integral_gain - 1;
 	        		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
 				WRITE_MSK(LPF_Config_1, lpf_config);
 				max_without_zeros = 0;
 
                                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                                printf("max_without_zeros exceeded. Giving up on this gain.\n");
+                                printf("max_without_zeros exceeded. Giving up on this gain pair.\n");
 
         			printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
         			WRITE_MSK(MSK_Init, 0x00000004);
@@ -817,8 +817,8 @@ int main (int argc, char **argv)
 
 
 
-	spectacular_success = 0;
-
+	spectacular_success = 0; //start with a fresh slate for success
+	max_without_zeros = 0; //clear out any partial counts from above
 
 
 		while(percent_error < 49.0){
@@ -872,8 +872,10 @@ int main (int argc, char **argv)
 
 
 		//time to test one or both of new PI gains
+                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("After spectacular success, we may increment gain pair here.\n");
 		//proportional_gain = proportional_gain + 1;
-		integral_gain = integral_gain + 1;
+		integral_gain = integral_gain - 1;
 		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
                 WRITE_MSK(LPF_Config_1, lpf_config);
 
@@ -906,13 +908,8 @@ int main (int argc, char **argv)
 
 
 
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("gains updated after we see some zero percent error.\n");
-
-
 
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("percent_error was greater than 49.0 percent so we resync.\n");
                 printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
                 WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
                 usleep(num_microseconds);
@@ -927,7 +924,9 @@ int main (int argc, char **argv)
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
-
+		//in the case that RX_INIT causes errors to begin to accumulate at this point then
+		//percent_error needs to not skip loop 1. try setting it to 55.0 (default) here.
+		percent_error = 55.0;
 
 
 	#ifdef ENDLESS_PRBS
