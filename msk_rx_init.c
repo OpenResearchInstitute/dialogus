@@ -501,7 +501,7 @@ int main (int argc, char **argv)
 	bitrate = 54200;
 	freq_if = (bitrate/4)*32;
 	tx_sample_rate = 61440000;
-	tx_rx_sample_ratio = 1;
+	tx_rx_sample_ratio = 25;
 	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;
 
 	delta_f = bitrate/4;
@@ -514,9 +514,9 @@ int main (int argc, char **argv)
         f2_fcw_rx = (f2/rx_sample_rate) * pow(2.0, 32.0);
 
 
-        WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw); //for a 61.44 MHz sample rate
-        WRITE_MSK(TX_F1_FreqWord, (uint32_t) f1_fcw_tx); //for a 61.44 MHz sample rate
-        WRITE_MSK(TX_F2_FreqWord, (uint32_t) f2_fcw_tx); //for a 61.44 MHz sample rate
+        WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
+        WRITE_MSK(TX_F1_FreqWord, (uint32_t) f1_fcw_tx);
+        WRITE_MSK(TX_F2_FreqWord, (uint32_t) f2_fcw_tx);
 
 
 
@@ -539,10 +539,6 @@ int main (int argc, char **argv)
         printf("RX_F2_FREQWORD: (0x%08x@%04x)\n", READ_MSK(RX_F2_FreqWord), OFFSET_MSK(RX_F2_FreqWord));
         printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_rx, (uint32_t) f2_fcw_rx);
 
-
-
-
-
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Reading the LPF_CONFIG_0 register.\n");
         printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
@@ -551,38 +547,27 @@ int main (int argc, char **argv)
 	printf("bits 31:16 are the LPF IIR alpha value.\n");
         printf("Reading the LPF_CONFIG_1 register.\n");
         printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
-        printf("bit 15:0 sets the integral gain of the PI controller integrator.\n");
-	printf("bit 31:16 sets the proportional gain of the PI controller integrator.\n");
-	printf("Writing 0x00000000 as filter roll off.\n");
-//	write_dma(msk_virtual_addr, 0x30, 0x87654321);
-//        msk_register_map->LPF_Config_0 = 0x87654321;
-	WRITE_MSK(LPF_Config_0, 0x00000002);
-        printf("wrote 0x00000002 to LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-//        printf("Old read_dma LPF_Config_0: (0x%08x@%04x)\n", read_dma(msk_virtual_addr, 0x30), 0x30);
+        printf("bit 23:0 sets the integral gain of the PI controller integrator.\n");
+	printf("bit 31:24 sets the integral gain bit shift.\n");
+        printf("Reading the LPF_CONFIG_2 register.\n");
+        printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
+        printf("bit 23:0 sets the proportional gain of the PI controller integrator.\n");
+        printf("bit 31:24 sets the proportional gain bit shift.\n");
 
-//	msk_register_map->LPF_Config_0 = 0x12345678;
-//        WRITE_MSK(LPF_Config_0, 0xFFFFFFFF); //zero and hold accumulators
+	WRITE_MSK(LPF_Config_0, 0x00000002); //zero and hold accumulators
+        printf("wrote 0x00000002 to LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
         usleep(num_microseconds);
-//	write_dma(msk_virtual_addr, 0x30, 0x00000000);
-//	msk_register_map->LPF_Config_0 = 0x00000000;
         WRITE_MSK(LPF_Config_0, 0x00000000); //accumulators in normal operation
         printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
-        printf("Writing a default value as proportional gain and a default value as integral gain.\n");
-//	write_dma(msk_virtual_addr, 0x34, 0x01000000);
-        WRITE_MSK(LPF_Config_1, 0x01000000);
+        printf("Write some default values for PI gain and bit shift.\n");
+        WRITE_MSK(LPF_Config_1, 0x005a5a5a);
+	WRITE_MSK(LPF_Config_2, 0x00a5a5a5);
 	usleep(num_microseconds);
         printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
         printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
-
-
-
-
-	WRITE_MSK(LPF_Config_0, 0x00000002); //zero and hold accumulators
+        printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
 	usleep(num_microseconds);
-	WRITE_MSK(LPF_Config_0, 0x00000000); //accumulators in normal operation
-	printf("Writing a default value as proportional gain and a default value as integral gain.\n");
-	WRITE_MSK(LPF_Config_1, 0x01000016);
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
         printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
@@ -652,13 +637,16 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int16_t proportional_gain = 0x0100;
-	int16_t integral_gain = 0x0200;
-	int32_t lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
+	int32_t proportional_gain = 0x00001298; //0x0012984F for 32 bits
+	int32_t integral_gain = 0x000000C0; //0x0000C067 for 32 bits
+	int32_t gain_bit_shift = 0x00000018; //0x18 is 24 and 0x20 is 32
+	int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+	int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Write proportional and integral gains to LPF_CONFIG_1.\n");
-	printf("The value we write is (0x%08x)\n",lpf_config);
-        WRITE_MSK(LPF_Config_1, lpf_config);
+	printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
+	printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
+        WRITE_MSK(LPF_Config_1, integral_config);
+	WRITE_MSK(LPF_Config_2, proportional_config);
 
 	//test xfer register reads
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -712,7 +700,8 @@ int main (int argc, char **argv)
 	        printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
 	        printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
 		percent_error = (   (double)(READ_MSK(PRBS_Error_Count))  /  (double)(READ_MSK(PRBS_Bit_Count))    )*100;
-		printf("(1) %2.1f %d %d 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_1));
+		printf("(1) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_2),
+								READ_MSK(LPF_Config_1));
 
                 if (isnan(percent_error)) {
                    printf("BOOM!\n");
@@ -753,9 +742,16 @@ int main (int argc, char **argv)
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
 				//proportional_gain = proportional_gain + 1;
-				integral_gain = integral_gain - 1;
-	        		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
-				WRITE_MSK(LPF_Config_1, lpf_config);
+				//integral_gain = integral_gain + 1;
+
+			        int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+			        int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			        printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
+			        printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
+			        WRITE_MSK(LPF_Config_1, integral_config);
+			        WRITE_MSK(LPF_Config_2, proportional_config);
+
 				max_without_zeros = 0;
 
                                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -850,7 +846,8 @@ int main (int argc, char **argv)
 	                printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
 	                printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
 	                percent_error = ((double)(READ_MSK(PRBS_Error_Count))/(double)(READ_MSK(PRBS_Bit_Count)))*100;
-                        printf("(2) %2.1f %d %d 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_1));
+                        printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2),
+								READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
 			if (isnan(percent_error)) {
 			printf("BOOM!\n");
@@ -875,12 +872,15 @@ int main (int argc, char **argv)
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
 		//proportional_gain = proportional_gain + 1;
-		integral_gain = integral_gain - 1;
-		lpf_config = (proportional_gain << 16) | (integral_gain & 0x0000FFFF);
-                WRITE_MSK(LPF_Config_1, lpf_config);
+		//integral_gain = integral_gain + 1;
 
-//somewhere in here in this point in the code, something seems to fix the split spectrum
-
+                int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+                int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+                printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
+                printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
+                WRITE_MSK(LPF_Config_1, integral_config);
+                WRITE_MSK(LPF_Config_2, proportional_config);
 
                 printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
                 WRITE_MSK(MSK_Init, 0x00000004);
