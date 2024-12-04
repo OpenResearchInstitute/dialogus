@@ -51,7 +51,7 @@
 
 //#define STREAMING
 //#define RX_ACTIVE
-//#define RF_LOOPBACK
+#define RF_LOOPBACK
 #define ENDLESS_PRBS
 
 
@@ -74,7 +74,8 @@
 #include "msk_top_regs.h"
 
 // one bit time is 19 microseconds
-float num_microseconds = 20;
+float num_microseconds = 5*20;
+float one_bit_time = 19;
 float percent_error = 55.0;
 int i; //index variable for loops
 
@@ -637,7 +638,7 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int32_t proportional_gain = 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 
+	int32_t proportional_gain = 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
 	int32_t integral_gain = 0x00000080; //0x0000C067 for 32 bits
 	int32_t gain_bit_shift = 0x0000000E; //0x18 is 24 and 0x20 is 32
 	int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
@@ -694,7 +695,7 @@ int main (int argc, char **argv)
 		printf("100 (or more) buckets of bits on the bus.\n");
 
 		for (buckets = 0; buckets < 10000; buckets++) {
-	                usleep(num_microseconds);
+	                usleep(one_bit_time);
 		}
 
 	        printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
@@ -741,7 +742,7 @@ int main (int argc, char **argv)
 
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				proportional_gain = proportional_gain - 1;
+				proportional_gain = proportional_gain + 1;
 				//integral_gain = integral_gain + 1;
 
 			        int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
@@ -840,7 +841,7 @@ int main (int argc, char **argv)
 	                printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
 
 			for(zero_segments = 0; zero_segments < 10000; zero_segments++){
-                        	usleep(num_microseconds);
+                        	usleep(one_bit_time);
 				}
 
 	                printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
@@ -872,7 +873,7 @@ int main (int argc, char **argv)
 		//time to test one or both of new PI gains
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
-		proportional_gain = proportional_gain - 1;
+		proportional_gain = proportional_gain + 1;
 		//integral_gain = integral_gain + 1;
 
                 int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
