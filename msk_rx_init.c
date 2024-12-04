@@ -510,8 +510,8 @@ int main (int argc, char **argv)
 	br_fcw = (bitrate/tx_sample_rate) * pow(2.0, 32.0);
 	f1_fcw_tx = (f1/tx_sample_rate) * pow(2.0, 32.0);
 	f2_fcw_tx = (f2/tx_sample_rate) * pow(2.0, 32.0);
-        f1_fcw_rx = (f1/rx_sample_rate) * pow(2.0, 32.0);
-        f2_fcw_rx = (f2/rx_sample_rate) * pow(2.0, 32.0);
+        f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);
+        f2_fcw_rx = (f2/tx_sample_rate) * pow(2.0, 32.0);
 
 
         WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
@@ -637,9 +637,9 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int32_t proportional_gain = 0x00001298; //0x0012984F for 32 bits
-	int32_t integral_gain = 0x000000C0; //0x0000C067 for 32 bits
-	int32_t gain_bit_shift = 0x00000018; //0x18 is 24 and 0x20 is 32
+	int32_t proportional_gain = 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 
+	int32_t integral_gain = 0x00000080; //0x0000C067 for 32 bits
+	int32_t gain_bit_shift = 0x0000000E; //0x18 is 24 and 0x20 is 32
 	int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -653,7 +653,7 @@ int main (int argc, char **argv)
 	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", READ_MSK(axis_xfer_count), OFFSET_MSK(axis_xfer_count));
 
 	//discard 24 receiver samples and 24 NCO Samples
-	WRITE_MSK(Rx_Sample_Discard, 0x00001919);
+	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
@@ -741,7 +741,7 @@ int main (int argc, char **argv)
 
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				//proportional_gain = proportional_gain + 1;
+				proportional_gain = proportional_gain - 1;
 				//integral_gain = integral_gain + 1;
 
 			        int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
@@ -859,7 +859,8 @@ int main (int argc, char **argv)
 			if(spectacular_success > 20) {
 				spectacular_success = 0;
 				printf("Paul, we had a good run.\n");
-				printf("(3) %2.1f %d %d 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_1));
+	                        printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
+										READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 				break;
 				}
 
@@ -871,7 +872,7 @@ int main (int argc, char **argv)
 		//time to test one or both of new PI gains
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
-		//proportional_gain = proportional_gain + 1;
+		proportional_gain = proportional_gain - 1;
 		//integral_gain = integral_gain + 1;
 
                 int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
