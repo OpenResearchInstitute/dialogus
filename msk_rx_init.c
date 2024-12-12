@@ -639,8 +639,8 @@ int main (int argc, char **argv)
 
 	//initial values of parameterized LPF_CONFIG are set up here
 	int32_t proportional_gain = 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-	int32_t integral_gain = 0x00000080; //0x0000C067 for 32 bits
-	int32_t gain_bit_shift = 0x0000000E; //0x18 is 24 and 0x20 is 32
+	int32_t integral_gain =     0x00000080; //0x0000C067 for 32 bits and 80 for 0E
+	int32_t gain_bit_shift =    0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
 	int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -659,7 +659,10 @@ int main (int argc, char **argv)
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
 
-
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Read NCO Telemetry:\n");
+	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -669,13 +672,17 @@ int main (int argc, char **argv)
         printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 
-
+	//re-fetch my damn channel
+	static struct iio_channel *my_dev_ch;
+	my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
 
 	//loop variables
 	int buckets = 0;
 	int max_without_zeros = 0;
 	int zero_segments = 0;
 	int spectacular_success = 0;
+	double my_rssi = 0;
+	char rssi_buffer[256];
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
@@ -703,6 +710,29 @@ int main (int argc, char **argv)
 		percent_error = (   (double)(READ_MSK(PRBS_Error_Count))  /  (double)(READ_MSK(PRBS_Bit_Count))    )*100;
 		printf("(1) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_2),
 								READ_MSK(LPF_Config_1));
+
+	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	        printf("Read NCO Telemetry:\n");
+	        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+	        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
+
+
+                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
+		if (ret < 0) {
+	       		        char rssi_error[256];
+                		iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+                		printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		        }
+		        else {
+                		printf("rssi: %s.\n", rssi_buffer);
+        		}
+
+
+
+
+
 
                 if (isnan(percent_error)) {
                    printf("BOOM!\n");
@@ -742,9 +772,11 @@ int main (int argc, char **argv)
 
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				proportional_gain = proportional_gain + 1;
+				//proportional_gain = proportional_gain + 1;
 				//integral_gain = integral_gain + 1;
 
+//commenting out the register write!
+/*
 			        int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 			        int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -752,7 +784,7 @@ int main (int argc, char **argv)
 			        printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
 			        WRITE_MSK(LPF_Config_1, integral_config);
 			        WRITE_MSK(LPF_Config_2, proportional_config);
-
+*/
 				max_without_zeros = 0;
 
                                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -810,6 +842,7 @@ int main (int argc, char **argv)
 				} //end of if MAX_WITHOUT_ZEROS > 20
 			}// end of if percent_error > 49.0
 	}// end of while percent_error > 0.1
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("fell out of while percent_error > 0.1 (hey, low error!) \n");
 
 
@@ -850,18 +883,44 @@ int main (int argc, char **argv)
                         printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2),
 								READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
+
+		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		        printf("Read NCO Telemetry:\n");
+		        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+		        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
+
+	                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	                ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
+	                if (ret < 0) {
+	                                char rssi_error[256];
+	                                iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+	                                printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+	                        }
+	                        else {
+	                                printf("rssi: %s.\n", rssi_buffer);
+	                        }
+
+
+
 			if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
 			}
 
-			spectacular_success++;
-
-			if(spectacular_success > 20) {
+//			spectacular_success++;
+                        if(false) {
+//			if(spectacular_success > 20) {
 				spectacular_success = 0;
 				printf("Paul, we had a good run.\n");
 	                        printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
 										READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
+
+			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			        printf("Read NCO Telemetry:\n");
+			        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+			        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
 				break;
 				}
 
@@ -873,9 +932,11 @@ int main (int argc, char **argv)
 		//time to test one or both of new PI gains
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
-		proportional_gain = proportional_gain + 1;
+		//proportional_gain = proportional_gain + 1;
 		//integral_gain = integral_gain + 1;
 
+//commenting out the register write!
+/*
                 int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
                 int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -883,6 +944,10 @@ int main (int argc, char **argv)
                 printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
                 WRITE_MSK(LPF_Config_1, integral_config);
                 WRITE_MSK(LPF_Config_2, proportional_config);
+*/
+
+
+
 
                 printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
                 WRITE_MSK(MSK_Init, 0x00000004);
