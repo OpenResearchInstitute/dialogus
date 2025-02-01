@@ -461,8 +461,8 @@ int main (int argc, char **argv)
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
-        printf("PTT,loopback, rx_invert enabled.\n");
-	WRITE_MSK(MSK_Control, 0x00000007);
+        printf("PTT and loopback enabled.\n");
+	WRITE_MSK(MSK_Control, 0x00000003);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	#endif
@@ -595,7 +595,8 @@ int main (int argc, char **argv)
 	printf("NOTE: error is inserted in both normal and PRBS data selection modes.\n");
 	printf("bit 2 clears PRBS counters.\n");
 	printf("bit 3 transition is a manual PRBS sync.\n");
-	printf("bit 31:16 prbs_sync_threshold.\n"); 
+	printf("bit 31:16 prbs_sync_threshold.\n");
+	printf("We choose a prbs_sync_threshold of 25 percent of bitrate to start out.\n"); 
         printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 	printf("This is the PRBS seed value. It sets the starting value of the PRBS generator.\n");
         printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
@@ -617,12 +618,11 @@ int main (int argc, char **argv)
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS.\n");
-	printf("Write 0x00000001 to PRBS_CONTROL. PRBS active (bit 0), no errors inserted (bit 1).\n");
-//	write_dma(msk_virtual_addr, 0x40, 0x87654321);
-	WRITE_MSK(PRBS_Control, 0x00000001);
+	printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
+        printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
+	WRITE_MSK(PRBS_Control, 0x34EE0001);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 	printf("Write a value to PRBS_INITIAL_STATE, as the seed.\n");
-//	write_dma(msk_virtual_addr, 0x44, 0x8E7589FD);
         WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
         printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 //        printf("Write 0xA3000000 to PRBS_POLYNOMIAL (32,30,26,25), a max length Fibonacci sequence generators.\n");
@@ -638,11 +638,20 @@ int main (int argc, char **argv)
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
-	int32_t proportional_gain = 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-	int32_t integral_gain =     0x00000080; //0x0000C067 for 32 bits and 80 for 0E
-	int32_t gain_bit_shift =    0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
-	int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-	int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+/*
+        int32_t proportional_gain =           0x00904073; // from matlab model 
+        int32_t integral_gain =               0x0002D3AD; //
+        int32_t proportional_gain_bit_shift = 0x0000001C; //
+        int32_t integral_gain_bit_shift =     0x00000020; //
+*/
+
+	int32_t proportional_gain =           0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
+	int32_t integral_gain =               0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
+        int32_t proportional_gain_bit_shift = 0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t integral_gain_bit_shift =     0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+
+	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
 	printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
@@ -741,6 +750,7 @@ int main (int argc, char **argv)
 
 		if (percent_error > 49.0){
 
+/* //Differential encoding put in as of 15 Dec 2024
                         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                         printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
                         WRITE_MSK(MSK_Control,(READ_MSK(MSK_Control)^0x00000004));
@@ -748,7 +758,7 @@ int main (int argc, char **argv)
 
 			printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
                         //usleep(num_microseconds*1000); //test increasing this delay?
-
+*/
 
 		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("percent_error was greater than 49.0 percent so we resync.\n");
@@ -772,19 +782,19 @@ int main (int argc, char **argv)
 
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				//proportional_gain = proportional_gain + 1;
-				//integral_gain = integral_gain + 1;
+				proportional_gain = proportional_gain - 1;
+				integral_gain = integral_gain + 0;
 
-//commenting out the register write!
-/*
-			        int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-			        int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+
+			        int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+			        int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			        printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
 			        printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
 			        WRITE_MSK(LPF_Config_1, integral_config);
 			        WRITE_MSK(LPF_Config_2, proportional_config);
-*/
+
+
 				max_without_zeros = 0;
 
                                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -908,9 +918,10 @@ int main (int argc, char **argv)
 			stop = true;
 			}
 
-//			spectacular_success++;
-                        if(false) {
-//			if(spectacular_success > 20) {
+			spectacular_success++;
+//			printf("spectactular_success = %d\n", spectacular_success);
+//                        if(false) {  //use this for no test for spectacular success
+			if(spectacular_success > 20) {
 				spectacular_success = 0;
 				printf("Paul, we had a good run.\n");
 	                        printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
@@ -932,19 +943,16 @@ int main (int argc, char **argv)
 		//time to test one or both of new PI gains
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
-		//proportional_gain = proportional_gain + 1;
-		//integral_gain = integral_gain + 1;
+		proportional_gain = proportional_gain - 1;
+		integral_gain = integral_gain + 0;
 
-//commenting out the register write!
-/*
-                int32_t proportional_config = (gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-                int32_t integral_config = (gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+                int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+                int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
                 printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
                 WRITE_MSK(LPF_Config_1, integral_config);
                 WRITE_MSK(LPF_Config_2, proportional_config);
-*/
 
 
 
