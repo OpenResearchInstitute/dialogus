@@ -665,10 +665,17 @@ int main (int argc, char **argv)
         int32_t integral_gain_bit_shift =     0x00000020; //
 */
 
-	int32_t proportional_gain =           0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-	int32_t integral_gain =               0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
-        int32_t proportional_gain_bit_shift = 0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
-	int32_t integral_gain_bit_shift =     0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
+	int32_t integral_gain =          0; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
+    int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t integral_gain_bit_shift =     0; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+
+	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
+	int32_t proportional_gain_increment = 0; //- 0x00001000;
+	int32_t integral_gain_increment = 0;
+	int32_t proportional_shift_increment = 0;
+	int32_t integral_shift_increment = 0;
+
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
@@ -802,8 +809,22 @@ int main (int argc, char **argv)
 
 			if(max_without_zeros > 20){
 				//increment proportional and/or integral gains here
-				proportional_gain = proportional_gain - 1;
-				integral_gain = integral_gain + 0;
+				proportional_gain = proportional_gain + proportional_gain_increment;
+				integral_gain = integral_gain + integral_gain_increment;
+
+				proportional_gain_bit_shift += proportional_shift_increment;
+				if (proportional_gain_bit_shift < 0) {
+					proportional_gain_bit_shift = 32;
+				} else if (proportional_gain_bit_shift > 32) {
+					proportional_gain_bit_shift = 0;
+				}
+		
+				integral_gain_bit_shift += integral_shift_increment;
+				if (integral_gain_bit_shift < 0) {
+					integral_gain_bit_shift = 32;
+				} else if (integral_gain_bit_shift > 32) {
+					integral_gain_bit_shift = 0;
+				}
 
 
 			        int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
@@ -963,8 +984,22 @@ int main (int argc, char **argv)
 		//time to test one or both of new PI gains
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("After spectacular success, we may increment gain pair here.\n");
-		proportional_gain = proportional_gain - 1;
-		integral_gain = integral_gain + 0;
+		proportional_gain = proportional_gain + proportional_gain_increment;
+		integral_gain = integral_gain + integral_gain_increment;
+
+		proportional_gain_bit_shift += proportional_shift_increment;
+		if (proportional_gain_bit_shift < 0) {
+			proportional_gain_bit_shift = 32;
+		} else if (proportional_gain_bit_shift > 32) {
+			proportional_gain_bit_shift = 0;
+		}
+
+		integral_gain_bit_shift += integral_shift_increment;
+		if (integral_gain_bit_shift < 0) {
+			integral_gain_bit_shift = 32;
+		} else if (integral_gain_bit_shift > 32) {
+			integral_gain_bit_shift = 0;
+		}
 
                 int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
                 int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
