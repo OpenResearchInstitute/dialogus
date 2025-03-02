@@ -62,10 +62,6 @@
 
 
 
-
-
-
-
 #define TX_DMAC_CONTROL_REGISTER 0x00
 #define TX_DMAC_STATUS_REGISTER 0x04
 #define TX_DMAC_IDENTIFICATION 0x000c
@@ -114,12 +110,9 @@ unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int valu
 //WRITE_MSK(MSK_Init, 0x00000001);
 #define WRITE_MSK(offset, value) *(volatile uint32_t*)&(msk_register_map->offset) = value
 
-
 //get the address offset of an MSK register
 //value = OFFSET_MSK(MSK_Init);
 #define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
-
-
 
 //delete
 void  dma_interface(unsigned int *virtual_addr)
@@ -143,13 +136,6 @@ uint64_t get_timestamp(void) {
     } while (read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
     return((((uint64_t) high) << 32U) | (uint64_t) low);
 }
-
-
-
-
-
-
-
 
 /* RX is input, TX is output */
 enum iodev { RX, TX };
@@ -357,21 +343,16 @@ int main (int argc, char **argv)
 	iio_channel_enable(tx0_i);
 	iio_channel_enable(tx0_q);
 
-
-
-        // number of kernel buffers can be increased from the default of 4 below
+    // number of kernel buffers can be increased from the default of 4 below
 	// this has to be done before iio_device_create_buffer()
-        int ret = iio_device_set_kernel_buffers_count(tx, 4);
-        if (ret < 0) {
-                char buf_test[256];
-                iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
-                printf("* set_kernel_buffers failed : %s\n", buf_test);
-        }
-	else {
+	int ret = iio_device_set_kernel_buffers_count(tx, 4);
+	if (ret < 0) {
+		char buf_test[256];
+		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
+		printf("* set_kernel_buffers failed : %s\n", buf_test);
+	} else {
 		printf("* set_kernel_buffers returned %d, which is a success.\n", ret);
 	}
-
-
 
 /*
 	// set the timeout higher to see if we can get a RX buffer refill without errors
@@ -388,75 +369,61 @@ int main (int argc, char **argv)
 
 */
 
-
-
-
 	printf("* Creating non-cyclic IIO buffers with 1 MiS\n");
-// original size of the rxbuf
-//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
-// size of our rxbuf
-        rxbuf = iio_device_create_buffer(rx, 1024*1, false);
+	// original size of the rxbuf
+	//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
+	// size of our rxbuf
+    rxbuf = iio_device_create_buffer(rx, 1024*1, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		shutdown();
 	}
-// original size of the txbuf
-//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
-// size of our txbuf
-        txbuf = iio_device_create_buffer(tx, 1024*1, false);
+
+	// original size of the txbuf
+	//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
+	// size of our txbuf
+    txbuf = iio_device_create_buffer(tx, 1024*1, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		shutdown();
 	}
 
-
-
-
-        printf("Hello World!\n");
-        printf("Opening character device files in DDR memory.\n");
-        int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
-        printf("Memory map the address of the TX-DMAC via its AXI lite control interface register block.\n");
-        unsigned int *dma_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
+	printf("Hello World!\n");
+	printf("Opening character device files in DDR memory.\n");
+	int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
+	printf("Memory map the address of the TX-DMAC via its AXI lite control interface register block.\n");
+	unsigned int *dma_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
 
 	printf("RDL Memory map the address of the MSK block via its AXI lite control interface.\n");
 	msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
-//        printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
-//        unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+//	printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
+//	unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
-		printf("Memory map the address of the peripherals block so we can use the hardware timer.\n");
-		timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
-		if (timer_register_map == MAP_FAILED) {
-			printf("Failed top map timer registers\n");
-			close(ddr_memory);
-			exit(1);
-		}
-	
+	printf("Memory map the address of the peripherals block so we can use the hardware timer.\n");
+	timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
+	if (timer_register_map == MAP_FAILED) {
+		printf("Failed top map timer registers\n");
+		close(ddr_memory);
+		exit(1);
+	}
 
-        printf("Create a buffer for some transmitted data.\n");
+    printf("Create a buffer for some transmitted data.\n");
 	// unsigned int transmit_data[4*100];
-        dma_interface(dma_virtual_addr);
-
-
-
-
-
+    dma_interface(dma_virtual_addr);
 
 	printf("Writing to scratch register in TX-DMAC.\n");
-        write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
-        printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
+    write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
+    printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
 	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_PERIPHERAL_ID), TX_DMAC_PERIPHERAL_ID);
 
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Configure MSK for minimum viable product test.\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Reading from MSK block HASH ID LOW: (0x%08x@%04x)\n", READ_MSK(Hash_ID_Low), OFFSET_MSK(Hash_ID_Low));
+	printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", READ_MSK(Hash_ID_High), OFFSET_MSK(Hash_ID_High));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
-
-
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Configure MSK for minimum viable product test.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Reading from MSK block HASH ID LOW: (0x%08x@%04x)\n", READ_MSK(Hash_ID_Low), OFFSET_MSK(Hash_ID_Low));
-        printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", READ_MSK(Hash_ID_High), OFFSET_MSK(Hash_ID_High));
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Initialize MSK block.\n");
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 	printf("bit 0: 0 is normal operation and 1 is initialize modem (reset condition).\n");
@@ -464,24 +431,23 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000001);
 	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-
 	//Receiver Active
 	#ifdef RX_ACTIVE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver only.\n");
+    printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver only.\n");
 	printf("PTT and loopback disabled.\n");
 	WRITE_MSK(MSK_Control, 0x00000000);
-        printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 	#else
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
-        printf("PTT and loopback enabled.\n");
+    printf("PTT and loopback enabled.\n");
 	WRITE_MSK(MSK_Control, 0x00000003);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	#endif
 
 	#ifdef RF_LOOPBACK
@@ -491,26 +457,18 @@ int main (int argc, char **argv)
         WRITE_MSK(MSK_Control, 0x00000001);
         printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-	#else
 	#endif 
-
 
 	printf("Reading the MSK_STATUS register, we see: (0x%08x@%04x)\n", READ_MSK(MSK_Status), OFFSET_MSK(MSK_Status));
 	printf("Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable\n");
 	printf("tx_enable is data to DAC enabled. rx_enable is data from ADC enable.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  READ_MSK(Tx_Bit_Count), OFFSET_MSK(Tx_Bit_Count));
 	printf("This register reads out the count of data requests made by the modem.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("TX_ENABLE_COUNT register is read and write. It holds the number of clocks on which Tx Enable is active.\n");
 	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(Tx_Enable_Count), OFFSET_MSK(Tx_Enable_Count));
-
-
-
-
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
 	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, rx_sample_rate, tx_rx_sample_ratio;
@@ -527,85 +485,78 @@ int main (int argc, char **argv)
 	br_fcw = (bitrate/tx_sample_rate) * pow(2.0, 32.0);
 	f1_fcw_tx = (f1/tx_sample_rate) * pow(2.0, 32.0);
 	f2_fcw_tx = (f2/tx_sample_rate) * pow(2.0, 32.0);
-        f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);
-        f2_fcw_rx = (f2/tx_sample_rate) * pow(2.0, 32.0);
+	f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);
+	f2_fcw_rx = (f2/tx_sample_rate) * pow(2.0, 32.0);
 
+	WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
+	WRITE_MSK(TX_F1_FreqWord, (uint32_t) f1_fcw_tx);
+	WRITE_MSK(TX_F2_FreqWord, (uint32_t) f2_fcw_tx);
 
-        WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
-        WRITE_MSK(TX_F1_FreqWord, (uint32_t) f1_fcw_tx);
-        WRITE_MSK(TX_F2_FreqWord, (uint32_t) f2_fcw_tx);
+	printf("FB_FREQWORD: (0x%08x@%04x)\n", READ_MSK(Fb_FreqWord), OFFSET_MSK(Fb_FreqWord));
+	printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", br_fcw, (uint32_t) br_fcw);
+	printf("TX_F1_FREQWORD: (0x%08x@%04x)\n", READ_MSK(TX_F1_FreqWord), OFFSET_MSK(TX_F1_FreqWord));
+	printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_tx, (uint32_t) f1_fcw_tx);
+	printf("TX_F2_FREQWORD: (0x%08x@%04x)\n", READ_MSK(TX_F2_FreqWord), OFFSET_MSK(TX_F2_FreqWord));
+	printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_tx, (uint32_t) f2_fcw_tx);
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Writing f1, f2 (values are calculated for MSK RX).\n");
 
+	WRITE_MSK(RX_F1_FreqWord, (uint32_t) f1_fcw_rx);
+	WRITE_MSK(RX_F2_FreqWord, (uint32_t) f2_fcw_rx);
 
+	printf("RX_F1_FREQWORD: (0x%08x@%04x)\n", READ_MSK(RX_F1_FreqWord), OFFSET_MSK(RX_F1_FreqWord));
+	printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_rx, (uint32_t) f1_fcw_rx);
+	printf("RX_F2_FREQWORD: (0x%08x@%04x)\n", READ_MSK(RX_F2_FreqWord), OFFSET_MSK(RX_F2_FreqWord));
+	printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_rx, (uint32_t) f2_fcw_rx);
 
-        printf("FB_FREQWORD: (0x%08x@%04x)\n", READ_MSK(Fb_FreqWord), OFFSET_MSK(Fb_FreqWord));
-        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", br_fcw, (uint32_t) br_fcw);
-        printf("TX_F1_FREQWORD: (0x%08x@%04x)\n", READ_MSK(TX_F1_FreqWord), OFFSET_MSK(TX_F1_FreqWord));
-        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_tx, (uint32_t) f1_fcw_tx);
-        printf("TX_F2_FREQWORD: (0x%08x@%04x)\n", READ_MSK(TX_F2_FreqWord), OFFSET_MSK(TX_F2_FreqWord));
-        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_tx, (uint32_t) f2_fcw_tx);
-
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Writing f1, f2 (values are calculated for MSK RX).\n");
-
-        WRITE_MSK(RX_F1_FreqWord, (uint32_t) f1_fcw_rx);
-        WRITE_MSK(RX_F2_FreqWord, (uint32_t) f2_fcw_rx);
-
-        printf("RX_F1_FREQWORD: (0x%08x@%04x)\n", READ_MSK(RX_F1_FreqWord), OFFSET_MSK(RX_F1_FreqWord));
-        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f1_fcw_rx, (uint32_t) f1_fcw_rx);
-        printf("RX_F2_FREQWORD: (0x%08x@%04x)\n", READ_MSK(RX_F2_FreqWord), OFFSET_MSK(RX_F2_FreqWord));
-        printf("expecting to see: %f float cast as uint32_t: 0x%08x \n", f2_fcw_rx, (uint32_t) f2_fcw_rx);
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Reading the LPF_CONFIG_0 register.\n");
-        printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Reading the LPF_CONFIG_0 register.\n");
+	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 	printf("bit 0 is whether or not we freeze the accumulator's current value.\n");
 	printf("bit 1 holds the PI accumulator at zero.\n");
 	printf("bits 31:16 are the LPF IIR alpha value.\n");
-        printf("Reading the LPF_CONFIG_1 register.\n");
-        printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
-        printf("bit 23:0 sets the integral gain of the PI controller integrator.\n");
+	printf("Reading the LPF_CONFIG_1 register.\n");
+	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
+	printf("bit 23:0 sets the integral gain of the PI controller integrator.\n");
 	printf("bit 31:24 sets the integral gain bit shift.\n");
-        printf("Reading the LPF_CONFIG_2 register.\n");
-        printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
-        printf("bit 23:0 sets the proportional gain of the PI controller integrator.\n");
-        printf("bit 31:24 sets the proportional gain bit shift.\n");
+	printf("Reading the LPF_CONFIG_2 register.\n");
+	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
+	printf("bit 23:0 sets the proportional gain of the PI controller integrator.\n");
+	printf("bit 31:24 sets the proportional gain bit shift.\n");
 
 	WRITE_MSK(LPF_Config_0, 0x00000002); //zero and hold accumulators
-        printf("wrote 0x00000002 to LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-        usleep(num_microseconds);
-        WRITE_MSK(LPF_Config_0, 0x00000000); //accumulators in normal operation
-        printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	printf("wrote 0x00000002 to LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	usleep(num_microseconds);
+	WRITE_MSK(LPF_Config_0, 0x00000000); //accumulators in normal operation
+	printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
-        printf("Write some default values for PI gain and bit shift.\n");
-        WRITE_MSK(LPF_Config_1, 0x005a5a5a);
+	printf("Write some default values for PI gain and bit shift.\n");
+	WRITE_MSK(LPF_Config_1, 0x005a5a5a);
 	WRITE_MSK(LPF_Config_2, 0x00a5a5a5);
 	usleep(num_microseconds);
-        printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-        printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
-        printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
+	printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
+	printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
 	usleep(num_microseconds);
 
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
-        printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
+	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
 	printf("Set TX_DATA_WIDTH to 32.\n");
 	WRITE_MSK(Tx_Data_Width, 0x00000020);
-        printf("Read TX_DATA_WIDTH.\n");
-        printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
+	printf("Read TX_DATA_WIDTH.\n");
+	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
 
-        printf("Read RX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
-        printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
-        printf("Set RX_DATA_WIDTH to 32.\n");
+	printf("Read RX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
+	printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
+	printf("Set RX_DATA_WIDTH to 32.\n");
 	WRITE_MSK(Rx_Data_Width, 0x00000020);
-        printf("Read RX_DATA_WIDTH.\n");
-        printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
+	printf("Read RX_DATA_WIDTH.\n");
+	printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
 
-
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Pseudo Random Binary Sequence control registers are read.\n");
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
+    printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
 	printf("bit 0 is PRBS data select. 0 is normal data transmit and 1 is PRBS transmit.\n");
 	printf("bit 1 is PRBS error insert. 0 is no error insertion and 1 inserts a bit error in transmit.\n");
 	printf("NOTE: error is inserted in both normal and PRBS data selection modes.\n");
@@ -613,55 +564,56 @@ int main (int argc, char **argv)
 	printf("bit 3 transition is a manual PRBS sync.\n");
 	printf("bit 31:16 prbs_sync_threshold.\n");
 	printf("We choose a prbs_sync_threshold of 25 percent of bitrate to start out.\n"); 
-        printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
+    printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 	printf("This is the PRBS seed value. It sets the starting value of the PRBS generator.\n");
-        printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
+    printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
 	printf("Bit positions set to 1 indicate polynomial feedback positions.\n");
-        printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
+	printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
 	printf("Bit positions set to 1 indicate bits that are inverted when a bit error is inserted.\n");
-        printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+    printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
 	printf("Number of bits received by the PRBS monitor since last BER\n");
 	printf("can be calculated as the ratio of received bits to errored-bits.\n");
-        printf("We read PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
-        printf("Number of errored-bits received by the PRBS monitor since last BER\n");
-        printf("can be calculated as the ratio of received bits to errored-bits.\n");
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
-        printf("PI conotroller accumulator value.\n");
-        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
-        printf("PI conotroller accumulator value.\n");
+	printf("We read PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+	printf("Number of errored-bits received by the PRBS monitor since last BER\n");
+	printf("can be calculated as the ratio of received bits to errored-bits.\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
+	printf("PI conotroller accumulator value.\n");
+	printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
+	printf("PI conotroller accumulator value.\n");
 
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS.\n");
-		//printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
-        //printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
-		//WRITE_MSK(PRBS_Control, 0x34EE0001);
-		printf("Write 0xff000001 to PRBS_CONTROL. PRBS active (bit 0)\n");
-        printf("auto sync threshold of 0xff00 (nearly max).\n");
-		WRITE_MSK(PRBS_Control, 0xFF000001);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+
+	//printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
+	//printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
+	//WRITE_MSK(PRBS_Control, 0x34EE0001);
+	printf("Write 0xff000001 to PRBS_CONTROL. PRBS active (bit 0)\n");
+	printf("auto sync threshold of 0xff00 (nearly max).\n");
+	WRITE_MSK(PRBS_Control, 0xFF000001);
+
+	printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 	printf("Write a value to PRBS_INITIAL_STATE, as the seed.\n");
-        WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
-        printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
-//        printf("Write 0xA3000000 to PRBS_POLYNOMIAL (32,30,26,25), a max length Fibonacci sequence generators.\n");
-//        write_dma(msk_virtual_addr, PRBS_POLYNOMIAL, 0xA3000000);
+    WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
+    printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
+//	printf("Write 0xA3000000 to PRBS_POLYNOMIAL (32,30,26,25), a max length Fibonacci sequence generators.\n");
+//	write_dma(msk_virtual_addr, PRBS_POLYNOMIAL, 0xA3000000);
 	printf("Write 0x48000000 to PRBS_POLYNOMIAL (31,28), a max length Fibonacci sequence generators.\n");
-//        write_dma(msk_virtual_addr, 0x48, 0x48000000);
-        WRITE_MSK(PRBS_Polynomial, 0x48000000);
-        printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
+//	write_dma(msk_virtual_addr, 0x48, 0x48000000);
+    WRITE_MSK(PRBS_Polynomial, 0x48000000);
+    printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
 	printf("Write 0x00000001 to PRBS_ERROR_MASK.\n");
-//        write_dma(msk_virtual_addr, 0x4c, 0x00000001);
-        WRITE_MSK(PRBS_Error_Mask, 0x00000001);
-        printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
+//	write_dma(msk_virtual_addr, 0x4c, 0x00000001);
+	WRITE_MSK(PRBS_Error_Mask, 0x00000001);
+    printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
 /*
-        int32_t proportional_gain =           0x00904073; // from matlab model 
-        int32_t integral_gain =               0x0002D3AD; //
-        int32_t proportional_gain_bit_shift = 0x0000001C; //
-        int32_t integral_gain_bit_shift =     0x00000020; //
+	int32_t proportional_gain =           0x00904073; // from matlab model 
+	int32_t integral_gain =               0x0002D3AD; //
+	int32_t proportional_gain_bit_shift = 0x0000001C; //
+	int32_t integral_gain_bit_shift =     0x00000020; //
 */
 
 	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
@@ -690,22 +642,20 @@ int main (int argc, char **argv)
 
 	//discard 24 receiver samples and 24 NCO Samples
 	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
 
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read NCO Telemetry:\n");
 	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
-
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("Deassert INIT: Write 0 to MSK_INIT\n");
-        usleep(num_microseconds);
-        WRITE_MSK(MSK_Init, 0x00000000);
-        printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
-
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Deassert INIT: Write 0 to MSK_INIT\n");
+	usleep(num_microseconds);
+	WRITE_MSK(MSK_Init, 0x00000000);
+	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 	//re-fetch my damn channel
 	static struct iio_channel *my_dev_ch;
@@ -720,8 +670,7 @@ int main (int argc, char **argv)
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
-	while(!stop)
-	{
+	while(!stop) {
 	#endif
 
 
@@ -731,81 +680,74 @@ int main (int argc, char **argv)
 			break;
 		}
 
-
-	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("100 (or more) buckets of bits on the bus.\n");
 
 		for (buckets = 0; buckets < 10000; buckets++) {
-	                usleep(one_bit_time);
+	    	usleep(one_bit_time);
 		}
 
-	        printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-	        printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+		printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+		printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
 		percent_error = (   (double)(READ_MSK(PRBS_Error_Count))  /  (double)(READ_MSK(PRBS_Bit_Count))    )*100;
 		printf("(1) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_2),
 								READ_MSK(LPF_Config_1));
 
-	        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	        printf("Read NCO Telemetry:\n");
-	        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-	        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("Read NCO Telemetry:\n");
+		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
 
 
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
 		if (ret < 0) {
-	       		        char rssi_error[256];
-                		iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-                		printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		        }
-		        else {
-                		printf("rssi: %s.\n", rssi_buffer);
-        		}
+			char rssi_error[256];
+			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		} else {
+			printf("rssi: %s.\n", rssi_buffer);
+		}
 
-
-
-
-
-
-                if (isnan(percent_error)) {
-                   printf("BOOM!\n");
-                   stop = true;
-                   }
+		if (isnan(percent_error)) {
+			printf("BOOM!\n");
+			stop = true;
+		}
 
 		if (percent_error > 49.0){
 
-/* //Differential encoding put in as of 15 Dec 2024
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                        printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
-                        WRITE_MSK(MSK_Control,(READ_MSK(MSK_Control)^0x00000004));
-                        usleep(num_microseconds);
+/* 			//Differential encoding put in as of 15 Dec 2024
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("Toggle RX_INVERT to test 180 degree phase shift.\n");
+			WRITE_MSK(MSK_Control,(READ_MSK(MSK_Control)^0x00000004));
+			usleep(num_microseconds);
 
 			printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-                        //usleep(num_microseconds*1000); //test increasing this delay?
+            // usleep(num_microseconds*1000); //test increasing this delay?
 */
 
-		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("percent_error was greater than 49.0 percent so we resync.\n");
-		        printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
-		        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
-		        usleep(num_microseconds);
-		        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+			printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+			WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
+			usleep(num_microseconds);
+			printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                        printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
 			printf("Toggle bit 2 of PRBS_CONTROL.\n");
-                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
-                        usleep(num_microseconds);
-                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+			WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
+			usleep(num_microseconds);
 
+			printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
-                        max_without_zeros++;
+			max_without_zeros++;
 			//printf("Increment max_without_zeros here.\nmax_without_zeros now equals: %d\n", max_without_zeros);
 
-			if(max_without_zeros > 20){
+			if (max_without_zeros > 20) {
 				//increment proportional and/or integral gains here
 				proportional_gain = proportional_gain + proportional_gain_increment;
 				integral_gain = integral_gain + integral_gain_increment;
@@ -836,242 +778,208 @@ int main (int argc, char **argv)
 
 				max_without_zeros = 0;
 
-                                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                                printf("max_without_zeros exceeded. Giving up on this gain pair.\n");
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("max_without_zeros exceeded. Giving up on this gain pair.\n");
 
-        			printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
-        			WRITE_MSK(MSK_Init, 0x00000004);
-        			printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
+				printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
+				WRITE_MSK(MSK_Init, 0x00000004);
+				printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 				usleep(num_microseconds);
-        			printf("De-Assert INIT: Write 0 to MSK_INIT\n");
-        			WRITE_MSK(MSK_Init, 0x00000000);
-        			printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
+				printf("De-Assert INIT: Write 0 to MSK_INIT\n");
+				WRITE_MSK(MSK_Init, 0x00000000);
+				printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 				usleep(num_microseconds);
 
 
 
-	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                                printf("Zero the accumulators.\n");
-                                printf("Bit 1 of LPF_CONFIG_0 is set and then cleared.\n");
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("Zero the accumulators.\n");
+				printf("Bit 1 of LPF_CONFIG_0 is set and then cleared.\n");
 				printf("31:16 is the filter alpha.\n");
-                                printf("Write 0xXXXX0002 to LPF_CONFIG_0.\n");
-                                WRITE_MSK(LPF_Config_0, 0x00000002);
-                                usleep(num_microseconds);
-                                printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-                                WRITE_MSK(LPF_Config_0, 0x00000000);
-                                usleep(num_microseconds);
-                                printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-			        printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
-			        printf("F1 PI controller accumulator value.\n");
-			        printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
-			        printf("F2 PI controller accumulator value.\n");
+				printf("Write 0xXXXX0002 to LPF_CONFIG_0.\n");
+				WRITE_MSK(LPF_Config_0, 0x00000002);
+				usleep(num_microseconds);
+				printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+				WRITE_MSK(LPF_Config_0, 0x00000000);
+				usleep(num_microseconds);
+				printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+				printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
+				printf("F1 PI controller accumulator value.\n");
+				printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
+				printf("F2 PI controller accumulator value.\n");
 
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("percent_error was greater than 49.0 percent so we resync.\n");
+				printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+				WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
+				usleep(num_microseconds);
+				printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
+				printf("Toggle bit 2 of PRBS_CONTROL.\n");
+				WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
+				usleep(num_microseconds);
+				printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
-	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                        printf("percent_error was greater than 49.0 percent so we resync.\n");
-	                        printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
-	                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
-	                        usleep(num_microseconds);
-	                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-
-	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                        printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-	                        printf("Toggle bit 2 of PRBS_CONTROL.\n");
-	                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
-	                        usleep(num_microseconds);
-	                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-	                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-
-
-
-
-
-				} //end of if MAX_WITHOUT_ZEROS > 20
-			}// end of if percent_error > 49.0
+			} //end of if MAX_WITHOUT_ZEROS > 20
+		}// end of if percent_error > 49.0
 	}// end of while percent_error > 0.1
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("fell out of while percent_error > 0.1 (hey, low error!) \n");
-
-
 
 	spectacular_success = 0; //start with a fresh slate for success
 	max_without_zeros = 0; //clear out any partial counts from above
 
 
-		while(percent_error < 49.0){
+	while(percent_error < 49.0){
 
-			if(stop){
-				break;
-			}
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                        printf("less than 49.0 percent error here.\n");
-			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-
-                        printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-                        printf("Toggle bit 2 of PRBS_CONTROL.\n");
-                        WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
-                        usleep(num_microseconds);
-                        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                        printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-                        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		if(stop){
+			break;
+		}
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("less than 49.0 percent error here.\n");
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 
-	                printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
-
-			for(zero_segments = 0; zero_segments < 10000; zero_segments++){
-                        	usleep(one_bit_time);
-				}
-
-	                printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-	                printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
-	                percent_error = ((double)(READ_MSK(PRBS_Error_Count))/(double)(READ_MSK(PRBS_Bit_Count)))*100;
-                        printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2),
-								READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
+		printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
+		printf("Toggle bit 2 of PRBS_CONTROL.\n");
+		WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
+		usleep(num_microseconds);
+		printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 
-		        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		        printf("Read NCO Telemetry:\n");
-		        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-		        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+		printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
+
+		for(zero_segments = 0; zero_segments < 10000; zero_segments++){
+			usleep(one_bit_time);
+		}
+
+		printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+		printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+		percent_error = ((double)(READ_MSK(PRBS_Error_Count))/(double)(READ_MSK(PRBS_Bit_Count)))*100;
+		printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2),
+				READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
 
-	                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	                ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
-	                if (ret < 0) {
-	                                char rssi_error[256];
-	                                iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-	                                printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-	                        }
-	                        else {
-	                                printf("rssi: %s.\n", rssi_buffer);
-	                        }
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		printf("Read NCO Telemetry:\n");
+		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
 
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
+		if (ret < 0) {
+			char rssi_error[256];
+			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		} else {
+			printf("rssi: %s.\n", rssi_buffer);
+		}
 
-			if (isnan(percent_error)) {
+		if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
-			}
-
-			spectacular_success++;
-//			printf("spectactular_success = %d\n", spectacular_success);
-//                        if(false) {  //use this for no test for spectacular success
-			if(spectacular_success > 20) {
-				spectacular_success = 0;
-				printf("Paul, we had a good run.\n");
-	                        printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
-										READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
-
-			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-			        printf("Read NCO Telemetry:\n");
-			        printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-			        printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
-
-				break;
-				}
-
-
-
-			} //end of while percent_error < 49.0
-
-
-		//time to test one or both of new PI gains
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		printf("After spectacular success, we may increment gain pair here.\n");
-		proportional_gain = proportional_gain + proportional_gain_increment;
-		integral_gain = integral_gain + integral_gain_increment;
-
-		proportional_gain_bit_shift += proportional_shift_increment;
-		if (proportional_gain_bit_shift < 0) {
-			proportional_gain_bit_shift = 32;
-		} else if (proportional_gain_bit_shift > 32) {
-			proportional_gain_bit_shift = 0;
 		}
 
-		integral_gain_bit_shift += integral_shift_increment;
-		if (integral_gain_bit_shift < 0) {
-			integral_gain_bit_shift = 32;
-		} else if (integral_gain_bit_shift > 32) {
-			integral_gain_bit_shift = 0;
+		spectacular_success++;
+//		printf("spectactular_success = %d\n", spectacular_success);
+//		if(false) {  //use this for no test for spectacular success
+		if(spectacular_success > 20) {
+			spectacular_success = 0;
+			printf("Paul, we had a good run.\n");
+			printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
+					READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
+
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("Read NCO Telemetry:\n");
+			printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
+			printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
+			break;
 		}
-
-		int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-                int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
-                printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
-                WRITE_MSK(LPF_Config_1, integral_config);
-                WRITE_MSK(LPF_Config_2, proportional_config);
+	} //end of while percent_error < 49.0
 
 
+	//time to test one or both of new PI gains
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("After spectacular success, we may increment gain pair here.\n");
+	proportional_gain = proportional_gain + proportional_gain_increment;
+	integral_gain = integral_gain + integral_gain_increment;
 
+	proportional_gain_bit_shift += proportional_shift_increment;
+	if (proportional_gain_bit_shift < 0) {
+		proportional_gain_bit_shift = 32;
+	} else if (proportional_gain_bit_shift > 32) {
+		proportional_gain_bit_shift = 0;
+	}
 
-                printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
-                WRITE_MSK(MSK_Init, 0x00000004);
-                printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
-                usleep(num_microseconds);
-                printf("De-Assert INIT: Write 0 to MSK_INIT\n");
-                WRITE_MSK(MSK_Init, 0x00000000);
-                printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
-                usleep(num_microseconds);
+	integral_gain_bit_shift += integral_shift_increment;
+	if (integral_gain_bit_shift < 0) {
+		integral_gain_bit_shift = 32;
+	} else if (integral_gain_bit_shift > 32) {
+		integral_gain_bit_shift = 0;
+	}
 
+	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
+	printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
+	WRITE_MSK(LPF_Config_1, integral_config);
+	WRITE_MSK(LPF_Config_2, proportional_config);
 
+	printf("Assert RX INIT: Write 1 to bit 2 of MSK_INIT\n");
+	WRITE_MSK(MSK_Init, 0x00000004);
+	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
+	usleep(num_microseconds);
+	printf("De-Assert INIT: Write 0 to MSK_INIT\n");
+	WRITE_MSK(MSK_Init, 0x00000000);
+	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
+	usleep(num_microseconds);
 
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("Zero the accumulators.\n");
-                printf("Bit 1 of LPF_CONFIG_0 is set and then cleared.\n");
-                printf("31:16 is the filter alpha.\n");
-                printf("Write 0xXXXX0002 to LPF_CONFIG_0.\n");
-                WRITE_MSK(LPF_Config_0, 0x00000002);
-                usleep(num_microseconds);
-                printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-                usleep(num_microseconds);
-                WRITE_MSK(LPF_Config_0, 0x00000000);
-                usleep(num_microseconds);
-                printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Zero the accumulators.\n");
+	printf("Bit 1 of LPF_CONFIG_0 is set and then cleared.\n");
+	printf("31:16 is the filter alpha.\n");
+	printf("Write 0xXXXX0002 to LPF_CONFIG_0.\n");
+	WRITE_MSK(LPF_Config_0, 0x00000002);
+	usleep(num_microseconds);
+	printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
+	usleep(num_microseconds);
+	WRITE_MSK(LPF_Config_0, 0x00000000);
+	usleep(num_microseconds);
+	printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
+	WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
+	usleep(num_microseconds);
+	printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
+	printf("Toggle bit 2 of PRBS_CONTROL.\n");
+	WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
+	usleep(num_microseconds);
+	printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
-
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("resync PRBS by toggling bit 3 of PRBS_CONTROL.\n");
-                WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000008));
-                usleep(num_microseconds);
-                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("reset the PRBS_BIT_COUNT and PRBS_ERROR_COUNT counters.\n");
-                printf("Toggle bit 2 of PRBS_CONTROL.\n");
-                WRITE_MSK(PRBS_Control, (READ_MSK(PRBS_Control)^0x00000004));
-                usleep(num_microseconds);
-                printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
-                printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-                printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-
-		//in the case that RX_INIT causes errors to begin to accumulate at this point then
-		//percent_error needs to not skip loop 1. try setting it to 55.0 (default) here.
-		percent_error = 55.0;
+	//in the case that RX_INIT causes errors to begin to accumulate at this point then
+	//percent_error needs to not skip loop 1. try setting it to 55.0 (default) here.
+	percent_error = 55.0;
 
 
 	#ifdef ENDLESS_PRBS
 	}
 	#endif
-
-
-
-
-
-
-
-
-
-//	int old_data = 0;
-//	int new_data = 0;
-
 
 
 #ifdef STREAMING
@@ -1087,23 +995,21 @@ int main (int argc, char **argv)
 		nbytes_tx = iio_buffer_push(txbuf);
 
 		// Use AXI stream transfer count register to see if data is getting to our logic
-                old_data = new_data;
-                new_data = msk_register_map->axis_xfer_count;
+		old_data = new_data;
+		new_data = msk_register_map->axis_xfer_count;
 //		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
-//              printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
+//		printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
 
 
-		if (nbytes_tx < 0) { printf("Error pushing buf %d\n", (int) nbytes_tx); shutdown(); }
-
-
-
-
-
-
+		if (nbytes_tx < 0) {
+			printf("Error pushing buf %d\n", (int) nbytes_tx); shutdown();
+		}
 
 		// Refill RX buffer
 		nbytes_rx = iio_buffer_refill(rxbuf);
-		if (nbytes_rx < 0) { printf("Error refilling buf %d\n",(int) nbytes_rx); shutdown(); }
+		if (nbytes_rx < 0) {
+			printf("Error refilling buf %d\n",(int) nbytes_rx); shutdown();
+		}
 
 		// READ: Get pointers to RX buf and read IQ from RX buf port 0
 		p_inc = iio_buffer_step(rxbuf);
@@ -1116,13 +1022,6 @@ int main (int argc, char **argv)
 			((int16_t*)p_dat)[1] = i;
 		}
 
-
-
-
-
-
-
-
 		// WRITE: Get pointers to TX buf and write IQ to TX buf port 0
 		p_inc = iio_buffer_step(txbuf);
 		p_end = iio_buffer_end(txbuf);
@@ -1132,8 +1031,9 @@ int main (int argc, char **argv)
 			// https://wiki.analog.com/resources/eval/user-guides/ad-fmcomms2-ebz/software/basic_iq_datafiles#binary_format
 			//((int16_t*)p_dat)[0] = 0x0800 << 4; // Real (I)
 			//((int16_t*)p_dat)[1] = 0x0800 << 4; // Imag (Q)
-                        ((int16_t*)p_dat)[0] = 0xAAAA; // Real (I)
-                        ((int16_t*)p_dat)[1] = 0xAAAA; // Imag (Q)
+
+			((int16_t*)p_dat)[0] = 0xAAAA; // Real (I)
+			((int16_t*)p_dat)[1] = 0xAAAA; // Imag (Q)
 		}
 
 		// Sample counter increment and status output
@@ -1144,13 +1044,6 @@ int main (int argc, char **argv)
 
 
 #endif
-
-
-
-
-
-
-
 
 	shutdown();
 
