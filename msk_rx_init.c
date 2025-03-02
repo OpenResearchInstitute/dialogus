@@ -34,6 +34,7 @@
 #define CHANNEL_CENTER MHZ(905.05)
 #define IF_FREQUENCY 433600		// 54200 * 32 / 4
 #define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
+#define RF_BANDWIDTH MHZ(1)	// Must be at twice (IF_FREQUENCY + signal bandwidth)
 
 #define IIO_ENSURE(expr) { \
 	if (!(expr)) { \
@@ -294,36 +295,17 @@ int main (int argc, char **argv)
 	// Listen to ctrl+c and IIO_ENSURE
 	signal(SIGINT, handle_sig);
 
-
-/*
-	// original RX stream config
-	rxcfg.bw_hz = MHZ(2);   // 2 MHz rf bandwidth
-	rxcfg.fs_hz = MHZ(2.5);   // 2.5 MS/s rx sample rate
-	rxcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
-	rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
-*/
-
-
         // OPV hardware RX stream config
-        rxcfg.bw_hz = MHZ(3);   // 2 MHz rf bandwidth
+	rxcfg.bw_hz = RF_BANDWIDTH;
         rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
         rxcfg.lo_hz = LO_FREQ;
         rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
 
-/*
-	// original TX stream config
-	txcfg.bw_hz = MHZ(1.5); // 1.5 MHz rf bandwidth
-	txcfg.fs_hz = MHZ(2.5);   // 2.5 MS/s tx sample rate
-	txcfg.lo_hz = GHZ(2.5); // 2.5 GHz rf frequency
-	txcfg.rfport = "A"; // port A (select for rf freq.)
-*/
-
         // OPV hardware TX stream config
-        txcfg.bw_hz = MHZ(3); // 1.5 MHz rf bandwidth
+	txcfg.bw_hz = RF_BANDWIDTH;
         txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
         txcfg.lo_hz = LO_FREQ;
         txcfg.rfport = "A"; // port A (select for rf freq.)
-
 
 	printf("* Acquiring IIO context\n");
 	if (argc == 1) {
