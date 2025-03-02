@@ -635,9 +635,12 @@ int main (int argc, char **argv)
 
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS.\n");
-	printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
-        printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
-	WRITE_MSK(PRBS_Control, 0x34EE0001);
+		//printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
+        //printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
+		//WRITE_MSK(PRBS_Control, 0x34EE0001);
+		printf("Write 0xff000001 to PRBS_CONTROL. PRBS active (bit 0)\n");
+        printf("auto sync threshold of 0xff00 (nearly max).\n");
+		WRITE_MSK(PRBS_Control, 0xFF000001);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 	printf("Write a value to PRBS_INITIAL_STATE, as the seed.\n");
         WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
