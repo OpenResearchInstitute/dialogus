@@ -30,6 +30,11 @@
 #define MHZ(x) ((long long)(x*1000000.0 + .5))
 #define GHZ(x) ((long long)(x*1000000000.0 + .5))
 
+/* Operating frequencies */
+#define CHANNEL_CENTER MHZ(905.05)
+#define IF_FREQUENCY 433600		// 54200 * 32 / 4
+#define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
+
 #define IIO_ENSURE(expr) { \
 	if (!(expr)) { \
 		(void) fprintf(stderr, "assertion failed (%s:%d)\n", __FILE__, __LINE__); \
@@ -302,7 +307,7 @@ int main (int argc, char **argv)
         // OPV hardware RX stream config
         rxcfg.bw_hz = MHZ(3);   // 2 MHz rf bandwidth
         rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
-        rxcfg.lo_hz = MHZ(905.05); // 905.05 MHz rf frequency
+        rxcfg.lo_hz = LO_FREQ;
         rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
 
 /*
@@ -316,7 +321,7 @@ int main (int argc, char **argv)
         // OPV hardware TX stream config
         txcfg.bw_hz = MHZ(3); // 1.5 MHz rf bandwidth
         txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
-        txcfg.lo_hz = MHZ(905.05); // 905.05 MHz rf frequency
+        txcfg.lo_hz = LO_FREQ;
         txcfg.rfport = "A"; // port A (select for rf freq.)
 
 
