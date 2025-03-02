@@ -434,7 +434,7 @@ int main (int argc, char **argv)
 	
 
         printf("Create a buffer for some transmitted data.\n");
-	unsigned int transmit_data[4*100];
+	// unsigned int transmit_data[4*100];
         dma_interface(dma_virtual_addr);
 
 
@@ -1036,8 +1036,8 @@ int main (int argc, char **argv)
 
 
 
-	int old_data = 0;
-	int new_data = 0;
+//	int old_data = 0;
+//	int new_data = 0;
 
 
 
