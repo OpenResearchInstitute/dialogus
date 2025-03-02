@@ -85,6 +85,13 @@ float one_bit_time = 19;
 float percent_error = 55.0;
 int i; //index variable for loops
 
+/* Register addresses for using the hardware timer */
+#define PERIPH_BASE 0xf8f00000
+#define GLOBAL_TMR_UPPER_OFFSET 0x0204
+#define GLOBAL_TMR_LOWER_OFFSET 0x0200
+/* Global Timer runs on the CPU clock, divided by 2 */
+#define COUNTS_PER_SECOND (666666687 / 2)
+static uint32_t *timer_register_map;
 
 //read from a memory mapped register
 unsigned int read_dma(unsigned int *virtual_addr, int offset)
@@ -122,6 +129,20 @@ void  dma_interface(unsigned int *virtual_addr)
         //break out and parse the fields in human readable format
 }
 
+uint64_t get_timestamp(void) {
+    uint32_t high, low;
+
+    // Reading global timer counter register
+    /* This is the method used in the library code for XTime_GetTime().
+       It handles the case where the first read of the two timer regs
+       spans a carry between the two timer words. */
+    do {
+        high = read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET);
+        low = read_dma(timer_register_map, GLOBAL_TMR_LOWER_OFFSET);
+        // printf("%08x %08x\n", high, low);
+    } while (read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
+    return((((uint64_t) high) << 32U) | (uint64_t) low);
+}
 
 
 
@@ -400,8 +421,17 @@ int main (int argc, char **argv)
 	printf("RDL Memory map the address of the MSK block via its AXI lite control interface.\n");
 	msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
-        printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
-        unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+//        printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
+//        unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+
+		printf("Memory map the address of the peripherals block so we can use the hardware timer.\n");
+		timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
+		if (timer_register_map == MAP_FAILED) {
+			printf("Failed top map timer registers\n");
+			close(ddr_memory);
+			exit(1);
+		}
+	
 
         printf("Create a buffer for some transmitted data.\n");
 	unsigned int transmit_data[4*100];
