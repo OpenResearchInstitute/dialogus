@@ -316,17 +316,17 @@ int main (int argc, char **argv)
 	// Listen to ctrl+c and IIO_ENSURE
 	signal(SIGINT, handle_sig);
 
-        // OPV hardware RX stream config
+	// OPV hardware RX stream config
 	rxcfg.bw_hz = RF_BANDWIDTH;
-        rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
-        rxcfg.lo_hz = LO_FREQ;
-        rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
+	rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
+	rxcfg.lo_hz = LO_FREQ;
+	rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
 
-        // OPV hardware TX stream config
+	// OPV hardware TX stream config
 	txcfg.bw_hz = RF_BANDWIDTH;
-        txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
-        txcfg.lo_hz = LO_FREQ;
-        txcfg.rfport = "A"; // port A (select for rf freq.)
+	txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
+	txcfg.lo_hz = LO_FREQ;
+	txcfg.rfport = "A"; // port A (select for rf freq.)
 
 	printf("* Acquiring IIO context\n");
 	if (argc == 1) {
@@ -514,7 +514,6 @@ int main (int argc, char **argv)
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
 	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, rx_sample_rate, tx_rx_sample_ratio;
-
 
 	bitrate = 54200;
 	freq_if = (bitrate/4)*32;
@@ -717,7 +716,6 @@ int main (int argc, char **argv)
 	int max_without_zeros = 0;
 	int zero_segments = 0;
 	int spectacular_success = 0;
-	double my_rssi = 0;
 	char rssi_buffer[256];
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
@@ -825,15 +823,15 @@ int main (int argc, char **argv)
 				} else if (integral_gain_bit_shift > 32) {
 					integral_gain_bit_shift = 0;
 				}
+		
 
-
-			        int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-			        int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
-			        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-			        printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
-			        printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
-			        WRITE_MSK(LPF_Config_1, integral_config);
-			        WRITE_MSK(LPF_Config_2, proportional_config);
+				int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+				int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+				printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
+				printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
+				WRITE_MSK(LPF_Config_1, integral_config);
+				WRITE_MSK(LPF_Config_2, proportional_config);
 
 
 				max_without_zeros = 0;
@@ -1001,7 +999,7 @@ int main (int argc, char **argv)
 			integral_gain_bit_shift = 0;
 		}
 
-                int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+		int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
                 int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
                 printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
                 printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
