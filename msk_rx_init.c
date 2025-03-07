@@ -86,7 +86,7 @@ int i; //index variable for loops
 #define GLOBAL_TMR_UPPER_OFFSET 0x0204
 #define GLOBAL_TMR_LOWER_OFFSET 0x0200
 /* Global Timer runs on the CPU clock, divided by 2 */
-#define COUNTS_PER_SECOND (666666687 / 2)
+#define COUNTS_PER_SECOND (666666687 / 2 / 2)
 static uint32_t *timer_register_map;
 
 //read from a memory mapped register
