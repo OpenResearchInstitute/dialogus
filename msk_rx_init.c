@@ -640,9 +640,9 @@ int main (int argc, char **argv)
 */
 
 	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-	int32_t integral_gain =          0; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
+	int32_t integral_gain =          	  0x007FFFFF; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
     int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
-	int32_t integral_gain_bit_shift =     0; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t integral_gain_bit_shift =     27; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
 
 	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
 	int32_t proportional_gain_increment = 0; //- 0x00001000;
