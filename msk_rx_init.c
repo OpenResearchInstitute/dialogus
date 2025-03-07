@@ -31,10 +31,12 @@
 #define GHZ(x) ((long long)(x*1000000000.0 + .5))
 
 /* Operating frequencies */
-#define CHANNEL_CENTER MHZ(905.05)
-#define IF_FREQUENCY 433600		// 54200 * 32 / 4
+#define CHANNEL_BITRATE (54200)		// OPV bit rate
+#define CHANNEL_CENTER MHZ(905.05)	// a legit channel in USA band plan
+#define CHANNEL_IF_SPACING (32)		// somewhat arbitrary choice
+#define IF_FREQUENCY (CHANNEL_BITRATE * CHANNEL_IF_SPACING / 4)		// equals 433_600
 #define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
-#define RF_BANDWIDTH MHZ(1)	// Must be at twice (IF_FREQUENCY + signal bandwidth)
+#define RF_BANDWIDTH MHZ(1)	// Must be at least the signal bandwidth + twice the IF_FREQUENCY
 
 #define IIO_ENSURE(expr) { \
 	if (!(expr)) { \
@@ -56,8 +58,8 @@
 // with a cable and an attentuator.
 
 //#define STREAMING
-//#define RX_ACTIVE
-#define RF_LOOPBACK
+#define RX_ACTIVE
+//#define RF_LOOPBACK
 #define ENDLESS_PRBS
 
 
@@ -314,10 +316,6 @@ int main (int argc, char **argv)
 	struct iio_device *tx;
 	struct iio_device *rx;
 
-	// RX and TX sample counters
-	size_t nrx = 0;
-	size_t ntx = 0;
-
 	// Stream configurations
 	struct stream_cfg rxcfg;
 	struct stream_cfg txcfg;
@@ -494,13 +492,14 @@ int main (int argc, char **argv)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
-	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, rx_sample_rate, tx_rx_sample_ratio;
+	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, tx_rx_sample_ratio;
+	double rx_sample_rate __attribute__((unused));
 
-	bitrate = 54200;
-	freq_if = (bitrate/4)*32;
+	bitrate = CHANNEL_BITRATE;
+	freq_if = IF_FREQUENCY;
 	tx_sample_rate = 61440000;
-	tx_rx_sample_ratio = 25;
-	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;
+	tx_rx_sample_ratio = 25;								// Rx downsampling implemented in FPGA
+	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;	// Rx effective sample rate
 
 	delta_f = bitrate/4;
 	f1 = freq_if - delta_f;
@@ -508,7 +507,7 @@ int main (int argc, char **argv)
 	br_fcw = (bitrate/tx_sample_rate) * pow(2.0, 32.0);
 	f1_fcw_tx = (f1/tx_sample_rate) * pow(2.0, 32.0);
 	f2_fcw_tx = (f2/tx_sample_rate) * pow(2.0, 32.0);
-	f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);
+	f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);	// use non-downsampled rate; downsampling happens after the NCO
 	f2_fcw_rx = (f2/tx_sample_rate) * pow(2.0, 32.0);
 
 	WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
@@ -990,6 +989,10 @@ int main (int argc, char **argv)
 
 
 #ifdef STREAMING
+
+	// RX and TX sample counters
+	size_t nrx = 0;
+	size_t ntx = 0;
 
 	printf("* Starting IO streaming (press CTRL+C to cancel)\n");
 	while (!stop)
