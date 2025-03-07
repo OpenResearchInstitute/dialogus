@@ -137,6 +137,10 @@ uint64_t get_timestamp(void) {
     return((((uint64_t) high) << 32U) | (uint64_t) low);
 }
 
+void print_timestamp(void) {
+	printf("timestamp: %f\n", get_timestamp() / (double)COUNTS_PER_SECOND);
+}
+
 /* RX is input, TX is output */
 enum iodev { RX, TX };
 
@@ -276,6 +280,25 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	if (!get_lo_chan(type, &chn)) { return false; }
 	wr_ch_lli(chn, "frequency", cfg->lo_hz);
 	return true;
+}
+
+void print_rssi(void) {
+	char rssi_buffer[256];
+
+	static struct iio_channel *my_dev_ch = NULL;
+	if (my_dev_ch == NULL) {
+		iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
+	}
+	
+	int ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
+	if (ret < 0) {
+		char rssi_error[256];
+		iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+		printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		printf("rssi: 9999.\n");	// for the output parser
+	} else {
+		printf("rssi: %s.\n", rssi_buffer);
+	}
 }
 
 /* simple configuration and streaming */
@@ -657,16 +680,11 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-	//re-fetch my damn channel
-	static struct iio_channel *my_dev_ch;
-	my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
-
 	//loop variables
 	int buckets = 0;
 	int max_without_zeros = 0;
 	int zero_segments = 0;
 	int spectacular_success = 0;
-	char rssi_buffer[256];
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
@@ -698,22 +716,14 @@ int main (int argc, char **argv)
 		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
-
-
-		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
-		if (ret < 0) {
-			char rssi_error[256];
-			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		} else {
-			printf("rssi: %s.\n", rssi_buffer);
-		}
+		print_rssi();
+		print_timestamp();
 
 		if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
 		}
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		if (percent_error > 49.0){
 
@@ -872,21 +882,14 @@ int main (int argc, char **argv)
 		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
-
-		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
-		if (ret < 0) {
-			char rssi_error[256];
-			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		} else {
-			printf("rssi: %s.\n", rssi_buffer);
-		}
+		print_rssi();
+		print_timestamp();
 
 		if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
 		}
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		spectacular_success++;
 //		printf("spectactular_success = %d\n", spectacular_success);
@@ -901,6 +904,10 @@ int main (int argc, char **argv)
 			printf("Read NCO Telemetry:\n");
 			printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 			printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
+			print_rssi();
+			print_timestamp();
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 			break;
 		}
