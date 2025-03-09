@@ -680,9 +680,7 @@ int main (int argc, char **argv)
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 	//loop variables
-	int buckets = 0;
 	int max_without_zeros = 0;
-	int zero_segments = 0;
 	int spectacular_success = 0;
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
@@ -690,6 +688,8 @@ int main (int argc, char **argv)
 	while(!stop) {
 	#endif
 
+	uint64_t reporting_interval = COUNTS_PER_SECOND;							// reporting period = one second
+	uint64_t next_reporting_timestamp = get_timestamp() + reporting_interval;	// report status periodically starting now
 
 	while(percent_error > 0.1){
 
@@ -700,7 +700,7 @@ int main (int argc, char **argv)
 	    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("100 (or more) buckets of bits on the bus.\n");
 
-		for (buckets = 0; buckets < 10000; buckets++) {
+		while (get_timestamp() < next_reporting_timestamp) {
 	    	usleep(one_bit_time);
 		}
 
@@ -722,6 +722,8 @@ int main (int argc, char **argv)
 			printf("BOOM!\n");
 			stop = true;
 		}
+
+		next_reporting_timestamp += reporting_interval;
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		if (percent_error > 49.0){
@@ -833,6 +835,8 @@ int main (int argc, char **argv)
 				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 				printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
+				next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
+
 			} //end of if MAX_WITHOUT_ZEROS > 20
 		}// end of if percent_error > 49.0
 	}// end of while percent_error > 0.1
@@ -862,10 +866,11 @@ int main (int argc, char **argv)
 		printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
+		next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
 
 		printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
 
-		for(zero_segments = 0; zero_segments < 10000; zero_segments++){
+		while (get_timestamp() < next_reporting_timestamp) {
 			usleep(one_bit_time);
 		}
 
@@ -982,6 +987,7 @@ int main (int argc, char **argv)
 	//percent_error needs to not skip loop 1. try setting it to 55.0 (default) here.
 	percent_error = 55.0;
 
+	next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
 
 	#ifdef ENDLESS_PRBS
 	}
