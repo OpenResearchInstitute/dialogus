@@ -289,7 +289,7 @@ void print_rssi(void) {
 
 	static struct iio_channel *my_dev_ch = NULL;
 	if (my_dev_ch == NULL) {
-		iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
+		my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
 	}
 	
 	int ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
