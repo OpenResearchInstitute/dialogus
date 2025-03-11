@@ -701,7 +701,7 @@ int main (int argc, char **argv)
 		printf("100 (or more) buckets of bits on the bus.\n");
 
 		while (get_timestamp() < next_reporting_timestamp) {
-	    	usleep(one_bit_time);
+			usleep(one_bit_time);
 		}
 
 		printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
