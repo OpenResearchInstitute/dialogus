@@ -57,11 +57,27 @@
 // RF_LOOPBACK is used for physically looping back TX to RX
 // with a cable and an attentuator.
 
+// Better to leave these definitions to the compiler command line.
 //#define STREAMING
-#define RX_ACTIVE
+//#define RX_ACTIVE
 //#define RF_LOOPBACK
-#define ENDLESS_PRBS
+//#define ENDLESS_PRBS
 
+#if defined (RX_ACTIVE) && defined (RF_LOOPBACK)
+#error "RX_ACTIVE and RF_LOOPBACK both defined is not valid."
+#endif
+
+#if ! defined (RX_ACTIVE) && ! defined (RF_LOOPBACK)
+#error "RX_ACTIVE and RF_LOOPBACK both undefined, not sure what to do."
+#endif
+
+#if defined (STREAMING) && defined (ENDLESS_PRBS)
+#error "STREAMING and ENDLESS_PRBS both defined is not valid."
+#endif
+
+#if ! defined (STREAMING) && ! defined (ENDLESS_PRBS)
+#error "STREAMING and ENDLESS_PRBS both undefined, not sure what to do."
+#endif
 
 
 #define TX_DMAC_CONTROL_REGISTER 0x00
