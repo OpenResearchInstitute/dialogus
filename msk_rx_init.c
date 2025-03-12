@@ -31,10 +31,12 @@
 #define GHZ(x) ((long long)(x*1000000000.0 + .5))
 
 /* Operating frequencies */
-#define CHANNEL_CENTER MHZ(905.05)
-#define IF_FREQUENCY 433600		// 54200 * 32 / 4
+#define CHANNEL_BITRATE (54200)		// OPV bit rate
+#define CHANNEL_CENTER MHZ(905.05)	// a legit channel in USA band plan
+#define CHANNEL_IF_SPACING (32)		// somewhat arbitrary choice
+#define IF_FREQUENCY (CHANNEL_BITRATE * CHANNEL_IF_SPACING / 4)		// equals 433_600
 #define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
-#define RF_BANDWIDTH MHZ(1)	// Must be at twice (IF_FREQUENCY + signal bandwidth)
+#define RF_BANDWIDTH MHZ(1)	// Must be at least the signal bandwidth + twice the IF_FREQUENCY
 
 #define IIO_ENSURE(expr) { \
 	if (!(expr)) { \
@@ -55,11 +57,27 @@
 // RF_LOOPBACK is used for physically looping back TX to RX
 // with a cable and an attentuator.
 
+// Better to leave these definitions to the compiler command line.
 //#define STREAMING
 //#define RX_ACTIVE
-#define RF_LOOPBACK
-#define ENDLESS_PRBS
+//#define RF_LOOPBACK
+//#define ENDLESS_PRBS
 
+#if defined (RX_ACTIVE) && defined (RF_LOOPBACK)
+#error "RX_ACTIVE and RF_LOOPBACK both defined is not valid."
+#endif
+
+#if ! defined (RX_ACTIVE) && ! defined (RF_LOOPBACK)
+#error "RX_ACTIVE and RF_LOOPBACK both undefined, not sure what to do."
+#endif
+
+#if defined (STREAMING) && defined (ENDLESS_PRBS)
+#error "STREAMING and ENDLESS_PRBS both defined is not valid."
+#endif
+
+#if ! defined (STREAMING) && ! defined (ENDLESS_PRBS)
+#error "STREAMING and ENDLESS_PRBS both undefined, not sure what to do."
+#endif
 
 
 #define TX_DMAC_CONTROL_REGISTER 0x00
@@ -86,7 +104,7 @@ int i; //index variable for loops
 #define GLOBAL_TMR_UPPER_OFFSET 0x0204
 #define GLOBAL_TMR_LOWER_OFFSET 0x0200
 /* Global Timer runs on the CPU clock, divided by 2 */
-#define COUNTS_PER_SECOND (666666687 / 2)
+#define COUNTS_PER_SECOND (666666687 / 2 / 2)
 static uint32_t *timer_register_map;
 
 //read from a memory mapped register
@@ -135,6 +153,10 @@ uint64_t get_timestamp(void) {
         // printf("%08x %08x\n", high, low);
     } while (read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
     return((((uint64_t) high) << 32U) | (uint64_t) low);
+}
+
+void print_timestamp(void) {
+	printf("timestamp: %f\n", get_timestamp() / (double)COUNTS_PER_SECOND);
 }
 
 /* RX is input, TX is output */
@@ -278,6 +300,25 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	return true;
 }
 
+void print_rssi(void) {
+	char rssi_buffer[256];
+
+	static struct iio_channel *my_dev_ch = NULL;
+	if (my_dev_ch == NULL) {
+		my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
+	}
+	
+	int ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
+	if (ret < 0) {
+		char rssi_error[256];
+		iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
+		printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		printf("rssi: 9999.\n");	// for the output parser
+	} else {
+		printf("rssi: %s.\n", rssi_buffer);
+	}
+}
+
 /* simple configuration and streaming */
 /* usage:
  * Default context, assuming local IIO devices, i.e., this script is run on ADALM-Pluto for example
@@ -290,10 +331,6 @@ int main (int argc, char **argv)
 	// Streaming devices
 	struct iio_device *tx;
 	struct iio_device *rx;
-
-	// RX and TX sample counters
-	size_t nrx = 0;
-	size_t ntx = 0;
 
 	// Stream configurations
 	struct stream_cfg rxcfg;
@@ -471,13 +508,14 @@ int main (int argc, char **argv)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
-	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, rx_sample_rate, tx_rx_sample_ratio;
+	double bitrate, freq_if, delta_f, f1, f2, br_fcw, f1_fcw_tx, f2_fcw_tx, f1_fcw_rx, f2_fcw_rx, tx_sample_rate, tx_rx_sample_ratio;
+	double rx_sample_rate __attribute__((unused));
 
-	bitrate = 54200;
-	freq_if = (bitrate/4)*32;
+	bitrate = CHANNEL_BITRATE;
+	freq_if = IF_FREQUENCY;
 	tx_sample_rate = 61440000;
-	tx_rx_sample_ratio = 25;
-	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;
+	tx_rx_sample_ratio = 25;								// Rx downsampling implemented in FPGA
+	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;	// Rx effective sample rate
 
 	delta_f = bitrate/4;
 	f1 = freq_if - delta_f;
@@ -485,7 +523,7 @@ int main (int argc, char **argv)
 	br_fcw = (bitrate/tx_sample_rate) * pow(2.0, 32.0);
 	f1_fcw_tx = (f1/tx_sample_rate) * pow(2.0, 32.0);
 	f2_fcw_tx = (f2/tx_sample_rate) * pow(2.0, 32.0);
-	f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);
+	f1_fcw_rx = (f1/tx_sample_rate) * pow(2.0, 32.0);	// use non-downsampled rate; downsampling happens after the NCO
 	f2_fcw_rx = (f2/tx_sample_rate) * pow(2.0, 32.0);
 
 	WRITE_MSK(Fb_FreqWord, (uint32_t) br_fcw);
@@ -617,9 +655,9 @@ int main (int argc, char **argv)
 */
 
 	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-	int32_t integral_gain =          0; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
+	int32_t integral_gain =          	  0x007FFFFF; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
     int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
-	int32_t integral_gain_bit_shift =     0; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t integral_gain_bit_shift =     27; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
 
 	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
 	int32_t proportional_gain_increment = 0; //- 0x00001000;
@@ -657,22 +695,17 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-	//re-fetch my damn channel
-	static struct iio_channel *my_dev_ch;
-	my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
-
 	//loop variables
-	int buckets = 0;
 	int max_without_zeros = 0;
-	int zero_segments = 0;
 	int spectacular_success = 0;
-	char rssi_buffer[256];
 
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
 	while(!stop) {
 	#endif
 
+	uint64_t reporting_interval = COUNTS_PER_SECOND;							// reporting period = one second
+	uint64_t next_reporting_timestamp = get_timestamp() + reporting_interval;	// report status periodically starting now
 
 	while(percent_error > 0.1){
 
@@ -683,8 +716,8 @@ int main (int argc, char **argv)
 	    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("100 (or more) buckets of bits on the bus.\n");
 
-		for (buckets = 0; buckets < 10000; buckets++) {
-	    	usleep(one_bit_time);
+		while (get_timestamp() < next_reporting_timestamp) {
+			usleep(one_bit_time);
 		}
 
 		printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
@@ -698,22 +731,16 @@ int main (int argc, char **argv)
 		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
-
-
-		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
-		if (ret < 0) {
-			char rssi_error[256];
-			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		} else {
-			printf("rssi: %s.\n", rssi_buffer);
-		}
+		print_rssi();
+		print_timestamp();
 
 		if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
 		}
+
+		next_reporting_timestamp += reporting_interval;
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		if (percent_error > 49.0){
 
@@ -824,6 +851,8 @@ int main (int argc, char **argv)
 				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 				printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 
+				next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
+
 			} //end of if MAX_WITHOUT_ZEROS > 20
 		}// end of if percent_error > 49.0
 	}// end of while percent_error > 0.1
@@ -853,10 +882,11 @@ int main (int argc, char **argv)
 		printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
+		next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
 
 		printf("100 buckets of bits on the bus, 100 buckets of bits.\n");
 
-		for(zero_segments = 0; zero_segments < 10000; zero_segments++){
+		while (get_timestamp() < next_reporting_timestamp) {
 			usleep(one_bit_time);
 		}
 
@@ -872,21 +902,14 @@ int main (int argc, char **argv)
 		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
 
-
-		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-		ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
-		if (ret < 0) {
-			char rssi_error[256];
-			iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-			printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		} else {
-			printf("rssi: %s.\n", rssi_buffer);
-		}
+		print_rssi();
+		print_timestamp();
 
 		if (isnan(percent_error)) {
 			printf("BOOM!\n");
 			stop = true;
 		}
+		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		spectacular_success++;
 //		printf("spectactular_success = %d\n", spectacular_success);
@@ -901,6 +924,10 @@ int main (int argc, char **argv)
 			printf("Read NCO Telemetry:\n");
 			printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 			printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+
+			print_rssi();
+			print_timestamp();
+			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 			break;
 		}
@@ -976,6 +1003,7 @@ int main (int argc, char **argv)
 	//percent_error needs to not skip loop 1. try setting it to 55.0 (default) here.
 	percent_error = 55.0;
 
+	next_reporting_timestamp = get_timestamp() + reporting_interval;	// we've spent some time re-initing, don't count that.
 
 	#ifdef ENDLESS_PRBS
 	}
@@ -983,6 +1011,10 @@ int main (int argc, char **argv)
 
 
 #ifdef STREAMING
+
+	// RX and TX sample counters
+	size_t nrx = 0;
+	size_t ntx = 0;
 
 	printf("* Starting IO streaming (press CTRL+C to cancel)\n");
 	while (!stop)
