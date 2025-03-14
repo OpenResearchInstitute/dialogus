@@ -62,6 +62,7 @@
 //#define RX_ACTIVE
 //#define RF_LOOPBACK
 //#define ENDLESS_PRBS
+//#define NO_INIT_ON_SUCCESS
 
 #if defined (RX_ACTIVE) && defined (RF_LOOPBACK)
 #error "RX_ACTIVE and RF_LOOPBACK both defined is not valid."
@@ -912,8 +913,8 @@ int main (int argc, char **argv)
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 		spectacular_success++;
-//		printf("spectactular_success = %d\n", spectacular_success);
-//		if(false) {  //use this for no test for spectacular success
+
+#ifndef NO_INIT_ON_SUCCESS
 		if(spectacular_success > 20) {
 			spectacular_success = 0;
 			printf("Paul, we had a good run.\n");
@@ -931,6 +932,7 @@ int main (int argc, char **argv)
 
 			break;
 		}
+#endif
 	} //end of while percent_error < 49.0
 
 

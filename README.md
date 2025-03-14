@@ -43,11 +43,12 @@ mv staging pluto-0.38.sysroot
 cd pluto-msk-application
 # copy msk_top_regs.h from firmware build to this directory
 
-arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -D ENDLESS_PRBS -D RF_LOOPBACK -o msk_test-xmit msk_test.c -lpthread -liio -lm -Wall -Wextra && arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -D ENDLESS_PRBS -D RX_ACTIVE -o msk_test-recv msk_test.c -lpthread -liio -lm -Wall -Wextra
+arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -D ENDLESS_PRBS -D NO_INIT_ON_SUCCESS -D RF_LOOPBACK -o msk_test-xmit msk_rx_init.c -lpthread -liio -lm -Wall -Wextra && arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -D ENDLESS_PRBS -D NO_INIT_ON_SUCCESS -D RX_ACTIVE -o msk_test-recv msk_rx_init.c -lpthread -liio -lm -Wall -Wextra
 # The above line builds two versions of the application.
 # The `xmit` version has `RF_LOOPBACK` enabled; it transmits PRBS forever.
 # The `recv` version has `RX_ACTIVE` enabled; it does not transmit.
 # Both versions try to receive and validate the data using PRBS Mon.
+# Both versions continue to run without re-inits if all is going well.q
 ```
 
 Notes:
