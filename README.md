@@ -5,17 +5,23 @@ C-code applications for the PLUTO MSK implementation
 
 See section below for how to build the application.
 
-To move the built application (`msk_test`) to the Pluto:
+To move the built application (here, `msk_test`) to the Pluto:
 ```
 scp msk_test root@pluto.local:/tmp/msk_test
 ```
 
-To execute the application (`msk_test`) on the Pluto with output streamed to your terminal:
+Then, to execute the application (here, `msk_test`) on the Pluto with output streamed to your terminal:
 ```
 ssh -t root@pluto.local /tmp/msk_test
 ```
 
 The above assumes that your host has direct or network access to the Pluto. If the Pluto is connected to another host you do have access to, you can try using the `-J jumphost` command line option for scp and ssh.
+
+To execute the application (here, `msk_test`) on the Pluto with output streamed to your terminal and also captured to a file for later analysis:
+```
+ssh -t root@pluto.local /tmp/msk_test | tee logfile.txt
+```
+
 
 ## What is what
 
@@ -62,7 +68,8 @@ harmless if you do. The `iio.h` include file and the `libiio` link library both
 come out of the sysroot in this build.
 
 3. You need the file `msk_top_regs.h` from the custom HDL build that's loaded into
-the Pluto's FPGA. It defines the register access map.
+the Pluto's FPGA. It defines the register access map. The application you build
+won't work on a Pluto with an FPGA image having an incompatible register map.
 
 4. The application code can build several different versions, depending on the
 definition of preprocessor symbols such as `RF_LOOPBACK` and `RX_ACTIVE`. On the
@@ -77,3 +84,33 @@ need those two versions.
 
 6. If you're using the specified toolchain, you should not need `-std=gnu99` on
 the compiler command line. It might be useful with some other toolchains.
+
+## Buiding with a Container
+
+If your local host machine is not running Linux, or if you don't want to clutter
+up your machine with the cross-platform toolchain, you may find it convenient to
+do the cross-platform building in a (Docker) container. For example, I've used
+this method to build the application on a Mac.
+
+`Dockerfile` contains the steps to build the container image:
+
+```
+docker build --platform linux/amd64 -t build-application .
+```
+
+Create a shell script to perform the build operation(s) you need. The commands
+are just like the ones we used in the previous section. The file
+`build-both-loopback-rx.sh` is an example of such a script.
+
+To run the script in the container, use a command like this:
+
+```
+docker run --platform=linux/amd64 --volume .:/repo build-application /bin/sh build-both-loopback-rx.sh
+```
+
+Better yet, put that command into a shell script of its own, as we have done
+in `conbuild-both-loopback-rx.sh`, and run the shell script (with no arguments
+needed) whenever you want to rebuild the application(s).
+
+If all goes well, the cross-platform compiler running inside the container will
+have written the Pluto executable(s) into the current directory on your host.
