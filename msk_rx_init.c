@@ -109,6 +109,9 @@ int i; //index variable for loops
 /* Global Timer runs on the CPU clock, divided by 2 */
 #define COUNTS_PER_SECOND (666666687 / 2 / 2)
 static uint32_t *timer_register_map;
+/* Collect telementry and make decisions after this duration */
+#define REPORTING_INTERVAL (COUNTS_PER_SECOND / 1000)
+
 
 //read from a memory mapped register
 unsigned int read_dma(unsigned int *virtual_addr, int offset)
@@ -718,7 +721,7 @@ int main (int argc, char **argv)
 	while(!stop) {
 	#endif
 
-	uint64_t reporting_interval = COUNTS_PER_SECOND;							// reporting period = one second
+	uint64_t reporting_interval = REPORTING_INTERVAL;
 	uint64_t next_reporting_timestamp = get_timestamp() + reporting_interval;	// report status periodically starting now
 
 	while(percent_error > 0.1){
