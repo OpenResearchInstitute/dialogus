@@ -80,6 +80,8 @@
 #error "STREAMING and ENDLESS_PRBS both undefined, not sure what to do."
 #endif
 
+#define TX_SYNC_CTRL_WORD 0x00000000
+#define TX_SYNC_COUNT (54200 * 20)	// long preamble for test detection
 
 #define TX_DMAC_CONTROL_REGISTER 0x00
 #define TX_DMAC_STATUS_REGISTER 0x04
@@ -461,6 +463,17 @@ int main (int argc, char **argv)
 	printf("Reading from MSK block HASH ID LOW: (0x%08x@%04x)\n", READ_MSK(Hash_ID_Low), OFFSET_MSK(Hash_ID_Low));
 	printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", READ_MSK(Hash_ID_High), OFFSET_MSK(Hash_ID_High));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
+
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_WORD);
+	WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_WORD);
+	printf("Reading TX_SYNC_CTRL. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Ctrl), OFFSET_MSK(Tx_Sync_Ctrl));
+	printf("Configure the TX_SYNC_CNT register to TX_SYNC_COUNT bit times.\n");
+	WRITE_MSK(Tx_Sync_Cnt, TX_SYNC_COUNT);
+	printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
 
 	printf("Initialize MSK block.\n");
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
