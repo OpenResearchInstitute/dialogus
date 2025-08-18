@@ -340,6 +340,9 @@ int send_dummy_frame(void) {
     
     return 0;
 }
+
+
+/* future FPGA pipeline code
 static uint64_t ovp_pipeline_errors = 0;
 
 // OVP Processing Configuration
@@ -349,11 +352,10 @@ static uint32_t ovp_pipeline_config =
     OVP_CFG_WHITENING_EN |
     OVP_CFG_SCRAMBLING_EN | 
     OVP_CFG_POSTAMBLE_EN;
+*/
+
+
 #endif
-
-
-
-
 
 
 
