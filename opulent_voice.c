@@ -146,6 +146,8 @@ int i; //index variable for loops
 #ifdef OVP_FRAME_MODE
 // OVP UDP Interface
 static int ovp_udp_socket = -1;
+static volatile int ovp_transmission_active = 0;
+static struct timespec last_frame_time;
 static struct sockaddr_in ovp_listen_addr;
 static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
