@@ -1230,7 +1230,8 @@ int main (int argc, char **argv)
 	printf("PI conotroller accumulator value.\n");
 
 
-
+        printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
+        WRITE_MSK(PRBS_Control, 0x00000000);
 #ifndef OVP_FRAME_MODE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS for modes that use it.\n");
@@ -1317,6 +1318,9 @@ int main (int argc, char **argv)
 	int max_without_zeros = 0;
 	int spectacular_success = 0;
 
+
+
+#ifndef OVP_FRAME_MODE // only run all these PRBS tests if we aren't doing OVP_FRAME_MODE
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
 	while(!stop) {
@@ -1626,8 +1630,8 @@ int main (int argc, char **argv)
 
 	#ifdef ENDLESS_PRBS
 	}
-	#endif
-
+	#endif //ENDLESS_PRBS
+#endif // end if not OVP_FRAME_MODE section
 
 
 
