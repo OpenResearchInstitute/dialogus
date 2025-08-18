@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Opulent Voice test code
+ * Opulent Voice transmission code
  *
  * Copyright (C) 2025 IABG mbH and ORI
  * Author: Michael Feilen <feilen_at_iabg.de>,
@@ -192,6 +192,7 @@ int start_transmission_session(void) {
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
     // For 40ms at MSK symbol rate: need to calculate exact byte count
     // MSK at ~271kSps, 40ms = ~10840 symbols = ~21680 bits = ~2710 bytes
+    // These numbers are not exactly right but are what I got for 40ms
     uint8_t preamble_frame[2710];  // Full 40ms of data
     
     // Fill with 1100 repeating pattern (0xCC = 11001100 binary)
@@ -268,7 +269,9 @@ int end_transmission_session(void) {
     ovp_sessions_ended++;
     hang_timer_active = 0;
     dummy_frames_sent = 0;
-    
+
+    printf("OVP: Session ended, ready for next transmission\n");
+
     return 0;
 }
 
@@ -327,6 +330,8 @@ int send_dummy_frame(void) {
     // Modify payload to indicate dummy/silence while keeping station ID intact
     // Keep OVP header (magic bytes + station ID + auth token) unchanged for identification
     // Only modify the COBS payload section to contain silence
+
+    // Without COBS, the current receivers will not recognize Preamble, Dummy, or Postamble frames
     
     // OVP header stays the same (bytes 0-11: magic + station ID + auth)
     // Modify payload section (bytes 12+) to silence pattern
@@ -806,7 +811,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
             ovp_udp_socket,
             ovp_frame_buffer,
             sizeof(ovp_frame_buffer),
-            0,
+            0, // blocking receive - will wait for frames
             (struct sockaddr*)&client_addr,
             &client_len
         );
@@ -822,7 +827,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
             
         } else if (bytes_received < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK && ovp_running) {
-                perror("OVP: UDP receive error");
+                perror("OVP: UDP receive error"); // don't exit on receive errors
             }
         }
     }
@@ -854,21 +859,22 @@ int start_ovp_listener(void) {
 // Stop OVP UDP listener
 void stop_ovp_listener(void) {
     if (ovp_running) {
+        printf("OVP: Stopping UDP listener...\n");
         ovp_running = 0;
         
-        if (ovp_udp_thread) {
-            pthread_join(ovp_udp_thread, NULL);
-        }
-        
+        // Close socket to unblock recvfrom in thread
         if (ovp_udp_socket >= 0) {
             close(ovp_udp_socket);
             ovp_udp_socket = -1;
         }
         
-        printf("OVP: Listener stopped\n");
+        if (ovp_udp_thread) {
+            pthread_join(ovp_udp_thread, NULL);
+        }
+        
+        printf("OVP: UDP listener stopped\n");
     }
 }
-
 
 
 
@@ -1628,27 +1634,39 @@ int main (int argc, char **argv)
     // Start OVP UDP listener
     if (start_ovp_listener() < 0) {
         printf("Failed to start OVP listener\n");
-        // Continue with existing functionality or exit based on requirements
+        return -1; // exit if UDP setup fails
     } else {
         printf("OVP listener started on port %d\n", OVP_UDP_PORT);
         printf("Ready to receive frames from Interlocutor\n");
+        printf("Press Ctrl+C to stop\n");
     }
 #endif
 
 
-// ADD TO MAIN LOOP (modify existing main loop to include OVP status):
+
+
+
+
+
 #ifdef OVP_FRAME_MODE
-    // Check hang timer and send dummy frames if needed
-    check_hang_timer();
-    
-    // Print OVP statistics periodically
-    static int ovp_stats_counter = 0;
-    if (++ovp_stats_counter >= 100) {  // Every 100 iterations
-        print_ovp_statistics();
-        ovp_stats_counter = 0;
+    // Main loop for OVP mode - keep program running
+    printf("OVP: Entering main processing loop\n");
+    while (!stop) {
+        // Check hang timer and send dummy frames if needed
+        check_hang_timer();
+        
+        // Print OVP statistics periodically
+        static int ovp_stats_counter = 0;
+        if (++ovp_stats_counter >= 10000) {  // Every 10000 iterations
+            print_ovp_statistics();
+            ovp_stats_counter = 0;
+        }
+        
+        // Small delay to prevent busy waiting
+        usleep(1000);  // 1ms sleep
     }
+    printf("OVP: Exiting main loop\n");
 #endif
-
 
 
 
