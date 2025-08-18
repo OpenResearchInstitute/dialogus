@@ -177,7 +177,7 @@ static uint64_t ovp_dummy_frames_sent = 0;
 // Session management functions
 int start_transmission_session(void);
 int end_transmission_session(void);
-void send_dummy_frame(void);
+int send_dummy_frame(void);
 void stop_ovp_listener(void);
 void print_ovp_statistics(void);
 
@@ -791,7 +791,7 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 }
 
 // UDP listener thread
-void* ovp_udp_listener_thread(void *arg) {
+void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
     struct sockaddr_in client_addr;
     socklen_t client_len;
     ssize_t bytes_received;
