@@ -152,6 +152,13 @@ static struct sockaddr_in ovp_listen_addr;
 static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
 
+// OVP session management variables
+static char active_station_id[11] = {0};  // 10 chars + null terminator
+static uint8_t last_frame_payload[OVP_MAX_FRAME_SIZE];
+static int hang_timer_active = 0;
+static int dummy_frames_sent = 0;
+static int hang_timer_frames = 25;  // Number of dummy frames before ending session
+
 // OVP Frame Buffer (sized for actual frames)
 static uint8_t ovp_frame_buffer[OVP_MAX_FRAME_SIZE];
 
@@ -166,6 +173,10 @@ static uint64_t ovp_dummy_frames_sent = 0;
 // Session management functions
 int start_transmission_session(void);
 int end_transmission_session(void);
+void send_dummy_frame(void);
+void stop_ovp_listener(void);
+void print_ovp_statistics(void);
+
 // Session management functions
 int start_transmission_session(void) {
     if (ovp_transmission_active) {
@@ -438,7 +449,7 @@ static struct iio_buffer  *txbuf = NULL;
 static bool stop;
 
 /* cleanup and exit */
-static void shutdown(void)
+static void cleanup_and_exit(void)
 {
 	#ifdef OVP_FRAME_MODE
 	    printf("Stopping OVP listener...\n");
@@ -484,7 +495,7 @@ static void handle_sig(int sig)
 
 /* check return value of attr_write function */
 static void errchk(int v, const char* what) {
-	 if (v < 0) { fprintf(stderr, "Error %d writing to channel \"%s\"\nvalue may not be supported.\n", v, what); shutdown(); }
+	 if (v < 0) { fprintf(stderr, "Error %d writing to channel \"%s\"\nvalue may not be supported.\n", v, what); cleanup_and_exit(); }
 }
 
 /* write attribute: long long int */
@@ -852,15 +863,18 @@ void stop_ovp_listener(void) {
     }
 }
 
-// Print OVP statistics (updated with station ID info)
+
+
+
+
 void print_ovp_statistics(void) {
     printf("\n=== OVP Statistics ===\n");
-    printf("Frames received:     %lu\n", ovp_frames_received);
-    printf("Frames processed:    %lu\n", ovp_frames_processed);
-    printf("Frame errors:        %lu\n", ovp_frame_errors);
-    printf("Dummy frames sent:   %lu\n", ovp_dummy_frames_sent);
-    printf("Sessions started:    %lu\n", ovp_sessions_started);
-    printf("Sessions ended:      %lu\n", ovp_sessions_ended);
+    printf("Frames received:     %llu\n", (unsigned long long)ovp_frames_received);
+    printf("Frames processed:    %llu\n", (unsigned long long)ovp_frames_processed);
+    printf("Frame errors:        %llu\n", (unsigned long long)ovp_frame_errors);
+    printf("Dummy frames sent:   %llu\n", (unsigned long long)ovp_dummy_frames_sent);
+    printf("Sessions started:    %llu\n", (unsigned long long)ovp_sessions_started);
+    printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
     printf("Active session:      %s\n", ovp_transmission_active ? "YES" : "NO");
     if (ovp_transmission_active) {
         printf("Active station ID:   %.8s\n", active_station_id);
@@ -878,16 +892,6 @@ void print_ovp_statistics(void) {
 }
 
 #endif // OVP_FRAME_MODE
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -996,7 +1000,7 @@ int main (int argc, char **argv)
     rxbuf = iio_device_create_buffer(rx, 1024*1, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
-		shutdown();
+		cleanup_and_exit();
 	}
 
 	// original size of the txbuf
@@ -1005,7 +1009,7 @@ int main (int argc, char **argv)
     txbuf = iio_device_create_buffer(tx, 1024*1, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
-		shutdown();
+		cleanup_and_exit();
 	}
 
 	printf("Hello World!\n");
@@ -1549,8 +1553,8 @@ int main (int argc, char **argv)
 		integral_gain_bit_shift = 0;
 	}
 
-	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
-	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
+	proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
+	integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
 	printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
@@ -1674,13 +1678,13 @@ int main (int argc, char **argv)
 
 
 		if (nbytes_tx < 0) {
-			printf("Error pushing buf %d\n", (int) nbytes_tx); shutdown();
+			printf("Error pushing buf %d\n", (int) nbytes_tx); cleanup_and_exit();
 		}
 
 		// Refill RX buffer
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) {
-			printf("Error refilling buf %d\n",(int) nbytes_rx); shutdown();
+			printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
 		}
 
 		// READ: Get pointers to RX buf and read IQ from RX buf port 0
@@ -1717,7 +1721,7 @@ int main (int argc, char **argv)
 
 #endif
 
-	shutdown();
+	cleanup_and_exit();
 
 	return 0;
 }
