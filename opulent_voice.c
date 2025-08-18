@@ -98,16 +98,16 @@
 #error "RX_ACTIVE and RF_LOOPBACK both defined is not valid."
 #endif
 
-#if ! defined (RX_ACTIVE) && ! defined (RF_LOOPBACK)
-#error "RX_ACTIVE and RF_LOOPBACK both undefined, not sure what to do."
+#if ! defined (RX_ACTIVE) && ! defined (RF_LOOPBACK) && ! defined (OVP_FRAME_MODE)
+#error "RX_ACTIVE and RF_LOOPBACK and OVP_FRAME_MODE all undefined, not sure what to do."
 #endif
 
 #if defined (STREAMING) && defined (ENDLESS_PRBS)
 #error "STREAMING and ENDLESS_PRBS both defined is not valid."
 #endif
 
-#if ! defined (STREAMING) && ! defined (ENDLESS_PRBS)
-#error "STREAMING and ENDLESS_PRBS both undefined, not sure what to do."
+#if defined (RX_ACTIVE) && ! defined (STREAMING) && ! defined (ENDLESS_PRBS)
+#error "STREAMING and ENDLESS_PRBS both undefined in RX_ACTIVE mode, not sure what to do."
 #endif
 
 #define TX_SYNC_CTRL_WORD 0x00000000
@@ -191,7 +191,7 @@ int start_transmission_session(void) {
     uint8_t preamble_frame[2710];  // Full 40ms of data
     
     // Fill with 1100 repeating pattern (0xCC = 11001100 binary)
-    for (int i = 0; i < sizeof(preamble_frame); i++) {
+    for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
         preamble_frame[i] = 0xCC;  // 1100 1100 repeating
     }
     
