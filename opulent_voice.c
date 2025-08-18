@@ -1203,7 +1203,7 @@ int main (int argc, char **argv)
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Pseudo Random Binary Sequence control registers are read.\n");
-    printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
 	printf("bit 0 is PRBS data select. 0 is normal data transmit and 1 is PRBS transmit.\n");
 	printf("bit 1 is PRBS error insert. 0 is no error insertion and 1 inserts a bit error in transmit.\n");
 	printf("NOTE: error is inserted in both normal and PRBS data selection modes.\n");
@@ -1211,13 +1211,13 @@ int main (int argc, char **argv)
 	printf("bit 3 transition is a manual PRBS sync.\n");
 	printf("bit 31:16 prbs_sync_threshold.\n");
 	printf("We choose a prbs_sync_threshold of 25 percent of bitrate to start out.\n"); 
-    printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
+        printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 	printf("This is the PRBS seed value. It sets the starting value of the PRBS generator.\n");
-    printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
+        printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
 	printf("Bit positions set to 1 indicate polynomial feedback positions.\n");
 	printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
 	printf("Bit positions set to 1 indicate bits that are inverted when a bit error is inserted.\n");
-    printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+        printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
 	printf("Number of bits received by the PRBS monitor since last BER\n");
 	printf("can be calculated as the ratio of received bits to errored-bits.\n");
 	printf("We read PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
@@ -1229,8 +1229,11 @@ int main (int argc, char **argv)
 	printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
 	printf("PI conotroller accumulator value.\n");
 
+
+
+#ifndef OVP_FRAME_MODE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Attempt to set up PRBS.\n");
+	printf("Attempt to set up PRBS for modes that use it.\n");
 
 	//printf("Write 0x34EE0001 to PRBS_CONTROL. PRBS active (bit 0)\n");
 	//printf("auto sync threshold of 25 percent of bit rate, which is 0x34EE.\n");
@@ -1241,18 +1244,24 @@ int main (int argc, char **argv)
 
 	printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control));
 	printf("Write a value to PRBS_INITIAL_STATE, as the seed.\n");
-    WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
-    printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
+        WRITE_MSK(PRBS_Initial_State, 0x8E7589FD);
+        printf("We read PRBS_INITIAL_STATE: (0x%08x@%04x)\n", READ_MSK(PRBS_Initial_State), OFFSET_MSK(PRBS_Initial_State));
 //	printf("Write 0xA3000000 to PRBS_POLYNOMIAL (32,30,26,25), a max length Fibonacci sequence generators.\n");
 //	write_dma(msk_virtual_addr, PRBS_POLYNOMIAL, 0xA3000000);
 	printf("Write 0x48000000 to PRBS_POLYNOMIAL (31,28), a max length Fibonacci sequence generators.\n");
 //	write_dma(msk_virtual_addr, 0x48, 0x48000000);
-    WRITE_MSK(PRBS_Polynomial, 0x48000000);
-    printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
+        WRITE_MSK(PRBS_Polynomial, 0x48000000);
+        printf("We read PRBS_POLYNOMIAL: (0x%08x@%04x)\n", READ_MSK(PRBS_Polynomial), OFFSET_MSK(PRBS_Polynomial));
 	printf("Write 0x00000001 to PRBS_ERROR_MASK.\n");
 //	write_dma(msk_virtual_addr, 0x4c, 0x00000001);
 	WRITE_MSK(PRBS_Error_Mask, 0x00000001);
-    printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
+        printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
+#endif
+
+
+
+
+
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
@@ -1265,7 +1274,7 @@ int main (int argc, char **argv)
 
 	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
 	int32_t integral_gain =          	  0x007FFFFF; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
-    int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
+        int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
 	int32_t integral_gain_bit_shift =     27; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
 
 	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
@@ -1360,7 +1369,7 @@ int main (int argc, char **argv)
 			usleep(num_microseconds);
 
 			printf("We read MSK_CONTROL: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-            // usleep(num_microseconds*1000); //test increasing this delay?
+                        // usleep(num_microseconds*1000); //test increasing this delay?
 */
 
 			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
