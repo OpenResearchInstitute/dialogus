@@ -86,6 +86,9 @@
 // RF_LOOPBACK has PTT on and loopback off.
 // RF_LOOPBACK is used for physically looping back TX to RX
 // with a cable and an attentuator.
+// OVP_FRAME_MODE sets up a listener for Interlocutor-produced frames.
+// these frames come in from a socket and are then delivered to the
+// modem through memory mapping. 
 
 // Better to leave these definitions to the compiler command line.
 //#define STREAMING
@@ -93,6 +96,7 @@
 //#define RF_LOOPBACK
 //#define ENDLESS_PRBS
 //#define NO_INIT_ON_SUCCESS
+//#define OVP_FRAME_MODE
 
 #if defined (RX_ACTIVE) && defined (RF_LOOPBACK)
 #error "RX_ACTIVE and RF_LOOPBACK both defined is not valid."
