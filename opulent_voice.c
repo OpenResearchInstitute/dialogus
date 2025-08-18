@@ -670,16 +670,16 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     }
     
     // Check magic bytes (0xBBAADD)
-    uint32_t magic = (frame_data[0] << 16) | (frame_data[1] << 8) | frame_data[2];
+    uint32_t magic = (frame_data[6] << 16) | (frame_data[7] << 8) | frame_data[8];
     if (magic != OVP_MAGIC_BYTES) {
         printf("OVP: Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
+        printf(ovp_data); //dump the entire frame if BBAADD is bad
         return -1;
     }
     
     // Additional validation could go here:
     // - Station ID validation (base-40 encoding)
     // - Authentication token check
-    // - Frame sequence numbers
     
     return 0;
 }
