@@ -673,7 +673,6 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     uint32_t magic = (frame_data[6] << 16) | (frame_data[7] << 8) | frame_data[8];
     if (magic != OVP_MAGIC_BYTES) {
         printf("OVP: Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
-        printf(ovp_frame); //dump the entire frame if BBAADD is bad
         return -1;
     }
     
