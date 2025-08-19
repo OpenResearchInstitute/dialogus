@@ -775,7 +775,8 @@ int init_ovp_udp_listener(void) {
         ovp_udp_socket = -1;
         return -1;
     }
-    
+
+
     printf("OVP: UDP listener initialized on port %d\n", OVP_UDP_PORT);
     return 0;
 }
@@ -948,6 +949,18 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
                 perror("OVP: UDP receive error"); // don't exit on receive errors
             }
         }
+
+
+
+
+        // ADD THIS DEBUG BLOCK HERE:
+        else if (bytes_received == 0) {
+            printf("OVP: UDP recvfrom returned 0 bytes\n");
+        }
+
+
+
+
     }
     
     printf("OVP: UDP listener thread exiting\n");
@@ -1796,8 +1809,20 @@ int main (int argc, char **argv)
     printf("OVP: Entering main processing loop\n");
     while (!stop) {
         // Check hang timer and send dummy frames if needed
-        check_hang_timer();
-        
+        //check_hang_timer(); //ORIGINAL
+
+
+
+
+        printf("OVP: Main loop iteration, stop=%d\n", stop);  // ADDED THIS
+        // Check hang timer and send dummy frames if needed
+        int hang_result = check_hang_timer();  // CHANGED THIS
+        printf("OVP: check_hang_timer returned %d\n", hang_result);  // ADDED THIS
+
+
+
+
+
         // Print OVP statistics periodically
         static int ovp_stats_counter = 0;
         if (++ovp_stats_counter >= 10000) {  // Every 10000 iterations
@@ -1808,7 +1833,8 @@ int main (int argc, char **argv)
         // Small delay to prevent busy waiting
         usleep(1000);  // 1ms sleep
     }
-    printf("OVP: Exiting main loop\n");
+    printf("OVP: Exiting main loop, stop=%d\n", stop);  // ADD THIS for DEBUG
+    //printf("OVP: Exiting main loop\n");
 #endif
 
 
