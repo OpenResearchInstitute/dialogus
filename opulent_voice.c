@@ -59,7 +59,7 @@
 // Opulent Voice Protocol constants
 #define OVP_MAGIC_BYTES 0xBBAADD
 #define OVP_HEADER_SIZE 12
-#define OVP_SINGLE_FRAME_SIZE   162     // Actual UDP packet size from Wireshark
+#define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
 #define OVP_MAX_FRAME_SIZE      200     // Small safety margin (might regret this)
 #define OVP_UDP_PORT            57372
 #define OVP_FRAME_PERIOD_MS     40      // Fixed 40ms timing
@@ -578,7 +578,7 @@ int start_transmission_session(void) {
     printf("OVP: Starting transmission session for station %.6s\n", active_station_id);
     
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
-    uint8_t preamble_frame[2710];  // Full 40ms of data
+    uint8_t preamble_frame[134];  // Full 40ms of data
     
     // Fill with 1100 repeating pattern (0xCC = 11001100 binary)
     for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
@@ -612,7 +612,7 @@ int end_transmission_session(void) {
     printf("OVP: Ending transmission session for station %.6s\n", active_station_id);
     
     // Send postamble: OVP frame with header + Barker sequence end pattern
-    uint8_t postamble_frame[162];  // Standard OVP frame size
+    uint8_t postamble_frame[134];  // Standard OVP frame size
     memset(postamble_frame, 0, sizeof(postamble_frame));
     
     // Use active station ID for regulatory compliance
@@ -633,7 +633,7 @@ int end_transmission_session(void) {
     
     // Repeat Barker sequence throughout payload
     int bit_pos = 0;
-    for (int i = 12; i < 162; i++) {  // Fill payload section
+    for (int i = 12; i < 134; i++) {  // Fill payload section
         uint8_t byte_val = 0;
         
         for (int bit = 7; bit >= 0; bit--) {  // MSB first
@@ -711,10 +711,10 @@ int check_hang_timer(void) {
 
 int send_dummy_frame(void) {
     // Create dummy frame using the last received frame as template
-    uint8_t dummy_frame[162];
+    uint8_t dummy_frame[134];
     
     // Start with the last real frame structure
-    memcpy(dummy_frame, last_frame_payload, 162);
+    memcpy(dummy_frame, last_frame_payload, 134);
     
     // Modify payload section (bytes 12+) to silence pattern
     memset(dummy_frame + 12, 0x00, 150);  // Silence/padding in payload
