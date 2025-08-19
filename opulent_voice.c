@@ -187,7 +187,7 @@ int start_transmission_session(void) {
         return 0;  // Session already active
     }
     
-    printf("OVP: Starting transmission session for station %.8s\n", active_station_id);
+    printf("OVP: Starting transmission session for station %.6s\n", active_station_id);
     
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
     // For 40ms at MSK symbol rate: need to calculate exact byte count
@@ -223,23 +223,25 @@ int end_transmission_session(void) {
         return 0;  // No active session
     }
     
-    printf("OVP: Ending transmission session for station %.8s\n", active_station_id);
+    printf("OVP: Ending transmission session for station %.6s\n", active_station_id);
     
     // Send postamble: OVP frame with header + Barker sequence end pattern
     uint8_t postamble_frame[162];  // Standard OVP frame size
     memset(postamble_frame, 0, sizeof(postamble_frame));
     
-    // Standard OVP header for postamble
-    postamble_frame[0] = 0xBB;  // Magic bytes
-    postamble_frame[1] = 0xAA;
-    postamble_frame[2] = 0xDD;
-    
     // Use active station ID for regulatory compliance
-    memcpy(postamble_frame + 3, active_station_id, 8);
+    memcpy(postamble_frame, active_station_id, 6);
     
     // Special auth token to indicate postamble
-    postamble_frame[11] = 0xEE;  // Postamble marker
-    
+    postamble_frame[6] = 0xEE;  // Postamble marker
+    postamble_frame[7] = 0x00;
+    postamble_frame[8] = 0xDD;
+
+    // set reserved field to zeros
+    postamble_frame[9] = 0x00;
+    postamble_frame[10] = 0x00;
+    postamble_frame[11] = 0x00;
+
     // Fill payload with 11-bit Barker sequence: 11100010010
     // This sequence has excellent autocorrelation properties for detection
     uint16_t barker_11 = 0x0712;  // 11100010010 in binary (right-aligned)
@@ -338,7 +340,7 @@ int send_dummy_frame(void) {
     memset(dummy_frame + 12, 0x00, 150);  // Silence/padding in payload
     
     // Send to MSK modulator
-    printf("OVP: Sending dummy frame for station %.8s to maintain carrier\n", active_station_id);
+    printf("OVP: Sending dummy frame for station %.6s to maintain carrier\n", active_station_id);
     // TODO: Send dummy_frame to MSK modulator
     
     ovp_dummy_frames_sent++;  // Update statistics
@@ -748,14 +750,14 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     }
     
     // Extract and store station ID for regulatory compliance
-    memcpy(active_station_id, frame_data + 3, 8);  // Station ID is at offset 3-10
+    memcpy(active_station_id, frame_data, 6);  // Station ID length of 6 bytes
     
     // Store complete frame for dummy frame generation
     memcpy(last_frame_payload, frame_data, frame_size);
     
     // Real frame received - cancel hang timer
     if (hang_timer_active) {
-        printf("OVP: Real frame received from %.8s, canceling hang timer\n", active_station_id);
+        printf("OVP: Real frame received from %.6s, canceling hang timer\n", active_station_id);
         hang_timer_active = 0;
         dummy_frames_sent = 0;
     }
@@ -765,11 +767,11 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     
     // Start transmission session if not active
     if (!ovp_transmission_active) {
-        printf("OVP: Starting session for station %.8s\n", active_station_id);
+        printf("OVP: Starting session for station %.6s\n", active_station_id);
         start_transmission_session();
     }
     
-    printf("OVP: Processing real frame %zu bytes from %.8s\n", frame_size, active_station_id);
+    printf("OVP: Processing real frame %zu bytes from %.6s\n", frame_size, active_station_id);
     
     // Process the frame (no preamble/postamble per frame)
     int result;
@@ -888,11 +890,11 @@ void print_ovp_statistics(void) {
     printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
     printf("Active session:      %s\n", ovp_transmission_active ? "YES" : "NO");
     if (ovp_transmission_active) {
-        printf("Active station ID:   %.8s\n", active_station_id);
+        printf("Active station ID:   %.6s\n", active_station_id);
     }
     printf("Hang timer active:   %s\n", hang_timer_active ? "YES" : "NO");
     if (hang_timer_active) {
-        printf("Dummy frames sent:   %d/%d (for %.8s)\n", 
+        printf("Dummy frames sent:   %d/%d (for %.6s)\n", 
                dummy_frames_sent, hang_timer_frames, active_station_id);
     }
     if (ovp_frames_received > 0) {
@@ -1232,6 +1234,7 @@ int main (int argc, char **argv)
 
         printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
         WRITE_MSK(PRBS_Control, 0x00000000);
+        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
 #ifndef OVP_FRAME_MODE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS for modes that use it.\n");
@@ -1299,11 +1302,11 @@ int main (int argc, char **argv)
 
 	//discard 24 receiver samples and 24 NCO Samples
 	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
-    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
 
-    printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read NCO Telemetry:\n");
 	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
