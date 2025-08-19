@@ -174,14 +174,140 @@ static uint64_t ovp_sessions_started = 0;
 static uint64_t ovp_sessions_ended = 0;
 static uint64_t ovp_dummy_frames_sent = 0;
 
-// Session management functions
+// Opulent Voice Protocol functions
 int start_transmission_session(void);
 int end_transmission_session(void);
 int send_dummy_frame(void);
 void stop_ovp_listener(void);
 void print_ovp_statistics(void);
+int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size);
+int enable_msk_transmission(void);
+int disable_msk_transmission(void);
+int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size);
+int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size);
+int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size);
 
-// Session management functions
+
+int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size) {
+    enable_msk_transmission();
+    return send_ovp_frame_to_msk(preamble_data, preamble_size);
+}
+
+int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size) {
+    int result = send_ovp_frame_to_msk(postamble_data, postamble_size);
+    // Small delay to ensure postamble is transmitted
+    usleep(50000);  // 50ms delay
+    disable_msk_transmission();
+    return result;
+}
+
+int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size) {
+    return send_ovp_frame_to_msk(dummy_data, dummy_size);
+}
+
+// Send OVP frame data to MSK modulator via IIO buffer
+int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
+    if (!txbuf) {
+        printf("OVP: Error - TX buffer not initialized\n");
+        return -1;
+    }
+    
+    if (!frame_data || frame_size == 0) {
+        printf("OVP: Error - invalid frame data\n");
+        return -1;
+    }
+    
+    printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+    
+    // Get buffer pointers and step size
+    char *p_dat, *p_end;
+    ptrdiff_t p_inc = iio_buffer_step(txbuf);
+    p_end = iio_buffer_end(txbuf);
+    
+    // Track how much frame data we've sent
+    size_t frame_offset = 0;
+    uint32_t old_xfer_count = READ_MSK(axis_xfer_count);
+    
+    // Fill TX buffer with frame data bytes
+    // The MSK modulator expects raw data bytes, not I/Q samples
+    // It will internally convert to MSK I/Q modulation
+    for (p_dat = (char *)iio_buffer_first(txbuf, tx0_i); p_dat < p_end; p_dat += p_inc) {
+        if (frame_offset < frame_size) {
+            // Send frame byte as 16-bit data to MSK modulator
+            // MSK modulator expects data width configured in Tx_Data_Width register (32 bits)
+            // Use both I and Q channels to send 32 bits total per sample
+            uint8_t data_byte = frame_data[frame_offset];
+            
+            // Pack byte into 16-bit I/Q format for MSK modulator input
+            // MSK will process this as bit data, not as I/Q samples
+            ((int16_t*)p_dat)[0] = (int16_t)(data_byte << 8);  // Real (I) - upper byte
+            ((int16_t*)p_dat)[1] = (int16_t)(data_byte);       // Imag (Q) - lower byte
+            
+            frame_offset++;
+        } else {
+            // Pad with zeros if frame is shorter than buffer
+            ((int16_t*)p_dat)[0] = 0;
+            ((int16_t*)p_dat)[1] = 0;
+        }
+    }
+    
+    // Push buffer to MSK modulator
+    ssize_t result = iio_buffer_push(txbuf);
+    if (result < 0) {
+        printf("OVP: Error pushing buffer to MSK: %zd\n", result);
+        return -1;
+    }
+    
+    // Check that data is flowing to MSK block
+    uint32_t new_xfer_count = READ_MSK(axis_xfer_count);
+    uint32_t delta = new_xfer_count - old_xfer_count;
+    
+    printf("OVP: Buffer pushed successfully, axis_xfer_count delta: %u\n", delta);
+    printf("OVP: Sent %zu frame bytes to MSK modulator for bit-level processing\n", frame_size);
+    
+    return 0;
+}
+
+
+
+
+
+// Enable PTT and start MSK transmission
+int enable_msk_transmission(void) {
+    printf("OVP: Enabling MSK transmission (PTT ON)\n");
+    WRITE_MSK(MSK_Control, 0x00000001);  // PTT on, loopback off
+    
+    // Small delay to let hardware settle
+    usleep(1000);
+    
+    uint32_t status = READ_MSK(MSK_Status);
+    printf("OVP: MSK_Status after PTT enable: 0x%08x\n", status);
+    
+    return 0;
+}
+
+
+// Disable PTT and stop MSK transmission  
+int disable_msk_transmission(void) {
+    printf("OVP: Disabling MSK transmission (PTT OFF)\n");
+    WRITE_MSK(MSK_Control, 0x00000000);  // PTT off
+    
+    uint32_t status = READ_MSK(MSK_Status);
+    printf("OVP: MSK_Status after PTT disable: 0x%08x\n", status);
+    
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
 int start_transmission_session(void) {
     if (ovp_transmission_active) {
         return 0;  // Session already active
@@ -190,9 +316,6 @@ int start_transmission_session(void) {
     printf("OVP: Starting transmission session for station %.6s\n", active_station_id);
     
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
-    // For 40ms at MSK symbol rate: need to calculate exact byte count
-    // MSK at ~271kSps, 40ms = ~10840 symbols = ~21680 bits = ~2710 bytes
-    // These numbers are not exactly right but are what I got for 40ms
     uint8_t preamble_frame[2710];  // Full 40ms of data
     
     // Fill with 1100 repeating pattern (0xCC = 11001100 binary)
@@ -202,7 +325,7 @@ int start_transmission_session(void) {
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
     printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
-    // TODO: Send preamble_frame to MSK modulator
+    send_preamble_frame(preamble_frame, sizeof(preamble_frame));  // UNCOMMENTED
     
     ovp_transmission_active = 1;
     ovp_sessions_started++;
@@ -217,6 +340,8 @@ int start_transmission_session(void) {
     
     return 0;
 }
+
+
 
 int end_transmission_session(void) {
     if (!ovp_transmission_active) {
@@ -236,14 +361,13 @@ int end_transmission_session(void) {
     postamble_frame[6] = 0xEE;  // Postamble marker
     postamble_frame[7] = 0x00;
     postamble_frame[8] = 0xDD;
-
+    
     // set reserved field to zeros
     postamble_frame[9] = 0x00;
     postamble_frame[10] = 0x00;
     postamble_frame[11] = 0x00;
-
+    
     // Fill payload with 11-bit Barker sequence: 11100010010
-    // This sequence has excellent autocorrelation properties for detection
     uint16_t barker_11 = 0x0712;  // 11100010010 in binary (right-aligned)
     
     // Repeat Barker sequence throughout payload
@@ -265,7 +389,7 @@ int end_transmission_session(void) {
     
     // Send postamble frame to MSK modulator (standard 40ms OVP frame)
     printf("OVP: Sending 40ms postamble frame (OVP header + Barker-11 end pattern)\n");
-    // TODO: Send postamble_frame to MSK modulator
+    send_postamble_frame(postamble_frame, sizeof(postamble_frame));  // UNCOMMENTED
     
     ovp_transmission_active = 0;
     ovp_sessions_ended++;
@@ -276,6 +400,10 @@ int end_transmission_session(void) {
 
     return 0;
 }
+
+
+
+
 
 int check_hang_timer(void) {
     if (!ovp_transmission_active) {
@@ -321,32 +449,35 @@ int check_hang_timer(void) {
     return 0;  // Session continues
 }
 
+
+
+
 int send_dummy_frame(void) {
     // Create dummy frame using the last received frame as template
-    // This ensures proper station ID and regulatory compliance
     uint8_t dummy_frame[162];
     
     // Start with the last real frame structure
     memcpy(dummy_frame, last_frame_payload, 162);
     
-    // Modify payload to indicate dummy/silence while keeping station ID intact
-    // Keep OVP header (magic bytes + station ID + auth token) unchanged for identification
-    // Only modify the COBS payload section to contain silence
-
-    // Without COBS, the current receivers will not recognize Preamble, Dummy, or Postamble frames
-    
-    // OVP header stays the same (bytes 0-11: magic + station ID + auth)
     // Modify payload section (bytes 12+) to silence pattern
     memset(dummy_frame + 12, 0x00, 150);  // Silence/padding in payload
     
     // Send to MSK modulator
     printf("OVP: Sending dummy frame for station %.6s to maintain carrier\n", active_station_id);
-    // TODO: Send dummy_frame to MSK modulator
+    send_dummy_frame_to_msk(dummy_frame, sizeof(dummy_frame));  // UNCOMMENTED
     
     ovp_dummy_frames_sent++;  // Update statistics
     
     return 0;
 }
+
+
+
+
+
+
+
+
 
 
 /* future FPGA pipeline code
@@ -785,7 +916,8 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     if (result == 0) {
         // Send frame data to MSK modulator (no additional framing)
         printf("OVP: Sending %zu frame bytes to MSK modulator\n", processed_size);
-        // TODO: Call existing MSK transmission function here
+        send_ovp_frame_to_msk(processed_data, processed_size);
+
     }
     #endif
     
@@ -1078,6 +1210,16 @@ int main (int argc, char **argv)
 	printf("Assert INIT: Write 1 to MSK_INIT\n");
 	WRITE_MSK(MSK_Init, 0x00000001);
 	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
+
+       // OVP_FRAME_MODE 
+       #ifdef OVP_FRAME_MODE
+       printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+       printf("OVP_FRAME_MODE: Configuring for frame-driven transmission\n");
+       printf("PTT off, loopback off, waiting for OVP frames\n");
+       WRITE_MSK(MSK_Control, 0x00000000);  // All control bits off
+       printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+       printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+       #endif
 
 	//Receiver Active
 	#ifdef RX_ACTIVE
@@ -1698,6 +1840,7 @@ int main (int argc, char **argv)
 	// RX and TX sample counters
 	size_t nrx = 0;
 	size_t ntx = 0;
+        uint32_t old_data = 0, new_data = 0;
 
 	printf("* Starting IO streaming (press CTRL+C to cancel)\n");
 	while (!stop)
