@@ -162,6 +162,7 @@ static uint8_t last_frame_payload[OVP_MAX_FRAME_SIZE];
 static int hang_timer_active = 0;
 static int dummy_frames_sent = 0;
 static int hang_timer_frames = 25;  // Number of dummy frames before ending session
+static uint32_t session_ts_base = 0;	// timestamp at start of a session
 
 // OVP Frame Buffer (sized for actual frames)
 static uint8_t ovp_frame_buffer[OVP_MAX_FRAME_SIZE];
@@ -256,6 +257,13 @@ uint64_t get_timestamp(void) {
         // printf("%08x %08x\n", high, low);
     } while (read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
     return((((uint64_t) high) << 32U) | (uint64_t) low);
+}
+
+uint32_t get_timestamp_ms(void) {
+	uint64_t ts = get_timestamp();
+	double ts_seconds = ts / (double)COUNTS_PER_SECOND;
+	double ts_ms = ts_seconds * 1000.0;
+	return (uint32_t)ts_ms;
 }
 
 void print_timestamp(void) {
@@ -478,6 +486,9 @@ int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size) {
 
 // Send OVP frame data to MSK modulator via IIO buffer
 int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
+
+	uint32_t local_ts_base;
+
     if (!txbuf) {
         printf("OVP: Error - TX buffer not initialized\n");
         return -1;
@@ -488,7 +499,7 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
         return -1;
     }
     
-    printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+    //printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
     
     // Get buffer pointers and step size
     char *p_dat, *p_end;
@@ -523,7 +534,10 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     }
     
     // Push buffer to MSK modulator
-    ssize_t result = iio_buffer_push(txbuf);
+	local_ts_base = get_timestamp_ms();
+    ssize_t result = iio_buffer_push_partial(txbuf, 134);	//!!! maybe not the right number, just a test
+	printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+
     if (result < 0) {
         printf("OVP: Error pushing buffer to MSK: %zd\n", result);
         return -1;
@@ -533,9 +547,7 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     uint32_t new_xfer_count = READ_MSK(axis_xfer_count);
     uint32_t delta = new_xfer_count - old_xfer_count;
     
-    printf("OVP: Buffer pushed successfully, axis_xfer_count delta: %u\n", delta);
-    printf("OVP: Sent %zu frame bytes to MSK modulator for bit-level processing\n", frame_size);
-    
+    printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);    
     return 0;
 }
 
@@ -545,7 +557,6 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
 
 // Enable PTT and start MSK transmission
 int enable_msk_transmission(void) {
-    printf("OVP: Enabling MSK transmission (PTT ON)\n");
     WRITE_MSK(MSK_Control, 0x00000001);  // PTT on, loopback off
     
     // Small delay to let hardware settle
@@ -576,7 +587,8 @@ int start_transmission_session(void) {
     }
     
     printf("OVP: Starting transmission session for station %.6s\n", active_station_id);
-    
+    session_ts_base = get_timestamp_ms();
+
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
     uint8_t preamble_frame[134];  // Full 40ms of data
     
@@ -586,13 +598,12 @@ int start_transmission_session(void) {
     }
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
-    printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes) at %ldns\n", sizeof(preamble_frame), last_frame_time.tv_nsec);
+    //printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
     send_preamble_frame(preamble_frame, sizeof(preamble_frame));  // UNCOMMENTED
     
     ovp_transmission_active = 1;
     ovp_sessions_started++;
     clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
-	printf("OVP: updated last_frame_time to %ldns\n", last_frame_time.tv_nsec);
     
     // Account for preamble transmission time
     last_frame_time.tv_nsec += 40000000;  // Add 40ms
@@ -600,7 +611,6 @@ int start_transmission_session(void) {
         last_frame_time.tv_sec++;
         last_frame_time.tv_nsec -= 1000000000;
     }
-	printf("OVP: bumped last_frame_time 40ms to %ldns for preamble\n", last_frame_time.tv_nsec);
     
     return 0;
 }
@@ -651,7 +661,7 @@ int end_transmission_session(void) {
     }
     
     // Send postamble frame to MSK modulator (standard 40ms OVP frame)
-    printf("OVP: Sending 40ms postamble frame (OVP header + Barker-11 end pattern)\n");
+    //printf("OVP: Sending 40ms postamble frame (OVP header + Barker-11 end pattern)\n");
     send_postamble_frame(postamble_frame, sizeof(postamble_frame));  // UNCOMMENTED
     
     ovp_transmission_active = 0;
@@ -659,7 +669,7 @@ int end_transmission_session(void) {
     hang_timer_active = 0;
     dummy_frames_sent = 0;
 
-    printf("OVP: Session ended, ready for next transmission\n");
+    printf("OVP: Session ended after %dms, ready for next transmission\n", get_timestamp_ms()-session_ts_base);
 
     return 0;
 }
@@ -677,8 +687,7 @@ int check_hang_timer(void) {
     // Calculate time since last real frame
     int32_t elapsed_ms = ((now.tv_sec - last_frame_time.tv_sec) * 1000) +
                          ((now.tv_nsec - last_frame_time.tv_nsec) / 1000000);
-    
-	printf("OVP: elapsed time is %dms in check_hang_timer\n", elapsed_ms);
+
     // Check if we need to start/continue hang timer
     if (elapsed_ms >= 40) {  // 40ms since last frame - time for next frame
         if (!hang_timer_active) {
@@ -698,8 +707,6 @@ int check_hang_timer(void) {
                 last_frame_time.tv_sec++;
                 last_frame_time.tv_nsec -= 1000000000;
             }
-            
-            printf("OVP: Sent dummy frame %d/%d at %ldns\n", dummy_frames_sent, hang_timer_frames, last_frame_time.tv_nsec);
         } else {
             // Sent all dummy frames, now end session
             printf("OVP: Hang timer complete, ending session\n");
@@ -723,9 +730,7 @@ int send_dummy_frame(void) {
     memset(dummy_frame + 12, 0x00, sizeof(dummy_frame)-12);  // Silence/padding in payload
     
     // Send to MSK modulator
-    printf("OVP: Sending dummy frame for station %.6s to maintain carrier\n", active_station_id);
     send_dummy_frame_to_msk(dummy_frame, sizeof(dummy_frame));  // UNCOMMENTED
-    
     ovp_dummy_frames_sent++;  // Update statistics
     
     return 0;
@@ -808,9 +813,7 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 // Process OVP frame payload through software pipeline (corrected - no per-frame preamble/postamble)
 int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size, 
                                 uint8_t *processed_data, size_t *processed_size) {
-    
-    printf("OVP: Processing %zu-byte frame (software pipeline)\n", frame_size);
-    
+        
     // The OVP frame is transmitted as-is (no preamble/postamble per frame)
     // Preamble/postamble are only at the beginning/end of transmission sessions
     
@@ -887,11 +890,10 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     
     // Start transmission session if not active
     if (!ovp_transmission_active) {
-        printf("OVP: Starting session for station %.6s at %ldns\n", active_station_id, last_frame_time.tv_nsec);
         start_transmission_session();
     }
     
-    printf("OVP: Processing real frame %zu bytes from %.6s at %ldns\n", frame_size, active_station_id, last_frame_time.tv_nsec);
+    printf("OVP: Processing real frame %zu bytes from %.6s\n", frame_size, active_station_id);
     
     // Process the frame (no preamble/postamble per frame)
     int result;
@@ -904,9 +906,7 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     
     if (result == 0) {
         // Send frame data to MSK modulator (no additional framing)
-        printf("OVP: Sending %zu frame bytes to MSK modulator\n", processed_size);
         send_ovp_frame_to_msk(processed_data, processed_size);
-
     }
     #endif
     
@@ -924,9 +924,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
     struct sockaddr_in client_addr;
     socklen_t client_len;
     ssize_t bytes_received;
-    
-    printf("OVP: UDP listener thread started\n");
-    
+        
     while (ovp_running) {
         client_len = sizeof(client_addr);
         bytes_received = recvfrom(
@@ -939,10 +937,10 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
         );
         
         if (bytes_received > 0) {
-            printf("OVP: Received %zd bytes from %s:%d\n", 
-                   bytes_received,
-                   inet_ntoa(client_addr.sin_addr),
-                   ntohs(client_addr.sin_port));
+            //printf("OVP: Received %zd bytes from %s:%d\n", 
+            //        bytes_received,
+            //        inet_ntoa(client_addr.sin_addr),
+            //            ntohs(client_addr.sin_port));
             
             // Process the frame
             process_ovp_frame(ovp_frame_buffer, bytes_received);
@@ -993,7 +991,6 @@ int start_ovp_listener(void) {
 // Stop OVP UDP listener
 void stop_ovp_listener(void) {
     if (ovp_running) {
-        printf("OVP: Stopping UDP listener...\n");
         ovp_running = 0;
         
         // Close socket to unblock recvfrom in thread
@@ -1425,12 +1422,13 @@ int main (int argc, char **argv)
         int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
 	int32_t integral_gain_bit_shift =     27; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
 
+#ifndef OVP_FRAME_MODE
 	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
 	int32_t proportional_gain_increment = 0; //- 0x00001000;
 	int32_t integral_gain_increment = 0;
 	int32_t proportional_shift_increment = 0;
 	int32_t integral_shift_increment = 0;
-
+#endif
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
@@ -1461,13 +1459,12 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
+
+#ifndef OVP_FRAME_MODE // only run all these PRBS tests if we aren't doing OVP_FRAME_MODE
 	//loop variables
 	int max_without_zeros = 0;
 	int spectacular_success = 0;
 
-
-
-#ifndef OVP_FRAME_MODE // only run all these PRBS tests if we aren't doing OVP_FRAME_MODE
 	// ENDLESS_PRBS runs PRBS based transmit indefinitely
 	#ifdef ENDLESS_PRBS
 	while(!stop) {
@@ -1809,7 +1806,6 @@ int main (int argc, char **argv)
 
 #ifdef OVP_FRAME_MODE
     // Main loop for OVP mode - keep program running
-    printf("OVP: Entering main processing loop\n");
     while (!stop) {
         // Check hang timer and send dummy frames if needed
         check_hang_timer();
