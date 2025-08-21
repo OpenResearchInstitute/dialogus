@@ -586,12 +586,13 @@ int start_transmission_session(void) {
     }
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
-    printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
+    printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes) at %ldns\n", sizeof(preamble_frame), last_frame_time.tv_nsec);
     send_preamble_frame(preamble_frame, sizeof(preamble_frame));  // UNCOMMENTED
     
     ovp_transmission_active = 1;
     ovp_sessions_started++;
     clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
+	printf("OVP: updated last_frame_time to %ldns\n", last_frame_time.tv_nsec);
     
     // Account for preamble transmission time
     last_frame_time.tv_nsec += 40000000;  // Add 40ms
@@ -599,6 +600,7 @@ int start_transmission_session(void) {
         last_frame_time.tv_sec++;
         last_frame_time.tv_nsec -= 1000000000;
     }
+	printf("OVP: bumped last_frame_time 40ms to %ldns for preamble\n", last_frame_time.tv_nsec);
     
     return 0;
 }
@@ -673,13 +675,14 @@ int check_hang_timer(void) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     
     // Calculate time since last real frame
-    uint32_t elapsed_ms = ((now.tv_sec - last_frame_time.tv_sec) * 1000) +
+    int32_t elapsed_ms = ((now.tv_sec - last_frame_time.tv_sec) * 1000) +
                          ((now.tv_nsec - last_frame_time.tv_nsec) / 1000000);
     
+	printf("OVP: elapsed time is %dms in check_hang_timer\n", elapsed_ms);
     // Check if we need to start/continue hang timer
     if (elapsed_ms >= 40) {  // 40ms since last frame - time for next frame
         if (!hang_timer_active) {
-            printf("OVP: No new frame received, starting hang timer\n");
+            printf("OVP: No new frame received in %d ms, starting hang timer\n", elapsed_ms);
             hang_timer_active = 1;
             dummy_frames_sent = 0;
         }
@@ -696,7 +699,7 @@ int check_hang_timer(void) {
                 last_frame_time.tv_nsec -= 1000000000;
             }
             
-            printf("OVP: Sent dummy frame %d/%d\n", dummy_frames_sent, hang_timer_frames);
+            printf("OVP: Sent dummy frame %d/%d at %ldns\n", dummy_frames_sent, hang_timer_frames, last_frame_time.tv_nsec);
         } else {
             // Sent all dummy frames, now end session
             printf("OVP: Hang timer complete, ending session\n");
@@ -717,7 +720,7 @@ int send_dummy_frame(void) {
     memcpy(dummy_frame, last_frame_payload, 134);
     
     // Modify payload section (bytes 12+) to silence pattern
-    memset(dummy_frame + 12, 0x00, 150);  // Silence/padding in payload
+    memset(dummy_frame + 12, 0x00, sizeof(dummy_frame)-12);  // Silence/padding in payload
     
     // Send to MSK modulator
     printf("OVP: Sending dummy frame for station %.6s to maintain carrier\n", active_station_id);
@@ -884,11 +887,11 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     
     // Start transmission session if not active
     if (!ovp_transmission_active) {
-        printf("OVP: Starting session for station %.6s\n", active_station_id);
+        printf("OVP: Starting session for station %.6s at %ldns\n", active_station_id, last_frame_time.tv_nsec);
         start_transmission_session();
     }
     
-    printf("OVP: Processing real frame %zu bytes from %.6s\n", frame_size, active_station_id);
+    printf("OVP: Processing real frame %zu bytes from %.6s at %ldns\n", frame_size, active_station_id, last_frame_time.tv_nsec);
     
     // Process the frame (no preamble/postamble per frame)
     int result;
@@ -1809,19 +1812,7 @@ int main (int argc, char **argv)
     printf("OVP: Entering main processing loop\n");
     while (!stop) {
         // Check hang timer and send dummy frames if needed
-        //check_hang_timer(); //ORIGINAL
-
-
-
-
-        printf("OVP: Main loop iteration, stop=%d\n", stop);  // ADDED THIS
-        // Check hang timer and send dummy frames if needed
-        int hang_result = check_hang_timer();  // CHANGED THIS
-        printf("OVP: check_hang_timer returned %d\n", hang_result);  // ADDED THIS
-
-
-
-
+        check_hang_timer();
 
         // Print OVP statistics periodically
         static int ovp_stats_counter = 0;
