@@ -157,7 +157,8 @@ static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
 
 // OVP session management variables
-static char active_station_id[11] = {0};  // 10 chars + null terminator
+static unsigned char active_station_id_binary[6] = {0,0,0,0,0,0};
+static char active_station_id_ascii[11] = "";	// 10 chars + null terminator
 static uint8_t last_frame_payload[OVP_MAX_FRAME_SIZE];
 static int hang_timer_active = 0;
 static int dummy_frames_sent = 0;
@@ -465,6 +466,36 @@ void print_rssi(void) {
 
 #ifdef OVP_FRAME_MODE
 
+/* Decode a base-40 encoded callsign to its text representation
+ *
+ * encoded -- array of 6 bytes encoded as specified for Opulent Voice
+ * buffer  -- array of 11 chars to receive the decoded station ID
+ */
+void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
+{
+    static const char callsign_map[] = "xABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.";
+    
+    char result[11];
+    
+    uint64_t numeric_id = ((uint64_t)encoded[0] << 40) \
+    					+ ((uint64_t)encoded[1] << 32) \
+    					+ ((uint64_t)encoded[2] << 24) \
+    					+ ((uint64_t)encoded[3] << 16) \
+    					+ ((uint64_t)encoded[4] << 8 )  \
+    					+  (uint64_t)encoded[5];
+
+    // decode each base-40 digit and map them to the appropriate character.
+    size_t index = 0;
+    while (numeric_id > 0)
+    {
+        result[index++] = callsign_map[numeric_id % 40];
+        numeric_id /= 40;
+    }
+    result[index] = 0x00;
+
+    strncpy(buffer, result, 11);
+
+}
 
 int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size) {
     enable_msk_transmission();
@@ -586,7 +617,7 @@ int start_transmission_session(void) {
         return 0;  // Session already active
     }
     
-    printf("OVP: Starting transmission session for station %.6s\n", active_station_id);
+    printf("OVP: Starting transmission session for station %s\n", active_station_id_ascii);
     session_ts_base = get_timestamp_ms();
 
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
@@ -621,14 +652,14 @@ int end_transmission_session(void) {
         return 0;  // No active session
     }
     
-    printf("OVP: Ending transmission session for station %.6s\n", active_station_id);
+    printf("OVP: Ending transmission session for station %s\n", active_station_id_ascii);
     
     // Send postamble: OVP frame with header + Barker sequence end pattern
     uint8_t postamble_frame[134];  // Standard OVP frame size
     memset(postamble_frame, 0, sizeof(postamble_frame));
     
     // Use active station ID for regulatory compliance
-    memcpy(postamble_frame, active_station_id, 6);
+    memcpy(postamble_frame, active_station_id_binary, 6);
     
     // Special auth token to indicate postamble
     postamble_frame[6] = 0xEE;  // Postamble marker
@@ -709,7 +740,6 @@ int check_hang_timer(void) {
             }
         } else {
             // Sent all dummy frames, now end session
-            printf("OVP: Hang timer complete, ending session\n");
             end_transmission_session();
             return 1;  // Session ended
         }
@@ -873,14 +903,15 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     }
     
     // Extract and store station ID for regulatory compliance
-    memcpy(active_station_id, frame_data, 6);  // Station ID length of 6 bytes
+    memcpy(active_station_id_binary, frame_data, 6);  // Station ID length of 6 bytes
+	decode_station_id(active_station_id_binary, active_station_id_ascii);
     
     // Store complete frame for dummy frame generation
     memcpy(last_frame_payload, frame_data, frame_size);
     
     // Real frame received - cancel hang timer
     if (hang_timer_active) {
-        printf("OVP: Real frame received from %.6s, canceling hang timer\n", active_station_id);
+        printf("OVP: Real frame received from %s, canceling hang timer\n", active_station_id_ascii);
         hang_timer_active = 0;
         dummy_frames_sent = 0;
     }
@@ -893,7 +924,7 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
         start_transmission_session();
     }
     
-    printf("OVP: Processing real frame %zu bytes from %.6s\n", frame_size, active_station_id);
+    printf("OVP: Processing real frame %zu bytes from %s\n", frame_size, active_station_id_ascii);
     
     // Process the frame (no preamble/postamble per frame)
     int result;
@@ -1020,12 +1051,12 @@ void print_ovp_statistics(void) {
     printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
     printf("Active session:      %s\n", ovp_transmission_active ? "YES" : "NO");
     if (ovp_transmission_active) {
-        printf("Active station ID:   %.6s\n", active_station_id);
+        printf("Active station ID:   %s\n", active_station_id_ascii);
     }
     printf("Hang timer active:   %s\n", hang_timer_active ? "YES" : "NO");
     if (hang_timer_active) {
-        printf("Dummy frames sent:   %d/%d (for %.6s)\n", 
-               dummy_frames_sent, hang_timer_frames, active_station_id);
+        printf("Dummy frames sent:   %d/%d (for %s)\n", 
+               dummy_frames_sent, hang_timer_frames, active_station_id_ascii);
     }
     if (ovp_frames_received > 0) {
         printf("Success rate:        %.1f%%\n", 
