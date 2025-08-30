@@ -55,12 +55,13 @@
 	} \
 }
 
+#define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
+#define OVP_MAX_FRAME_SIZE      200     // Small safety margin (might regret this)
+
 #ifdef OVP_FRAME_MODE
 // Opulent Voice Protocol constants
 #define OVP_MAGIC_BYTES 0xBBAADD
 #define OVP_HEADER_SIZE 12
-#define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
-#define OVP_MAX_FRAME_SIZE      200     // Small safety margin (might regret this)
 #define OVP_UDP_PORT            57372
 #define OVP_FRAME_PERIOD_MS     40      // Fixed 40ms timing
 
@@ -1407,7 +1408,7 @@ int main (int argc, char **argv)
         printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
         WRITE_MSK(PRBS_Control, 0x00000000);
         printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
-#ifndef OVP_FRAME_MODE
+#if !defined(OVP_FRAME_MODE) && !defined(STREAMING_MODE)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS for modes that use it.\n");
 
@@ -1491,7 +1492,7 @@ int main (int argc, char **argv)
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 
-#ifndef OVP_FRAME_MODE // only run all these PRBS tests if we aren't doing OVP_FRAME_MODE
+#if !defined(OVP_FRAME_MODE) && !defined(STREAMING_MODE)
 	//loop variables
 	int max_without_zeros = 0;
 	int spectacular_success = 0;
