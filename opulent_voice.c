@@ -519,6 +519,7 @@ int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size) {
 // Send OVP frame data to MSK modulator via IIO buffer
 int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
 
+	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
 
     if (!txbuf) {
@@ -566,8 +567,11 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     }
     
     // Push buffer to MSK modulator
+
 	local_ts_base = get_timestamp_ms();
-    ssize_t result = iio_buffer_push_partial(txbuf, 134);	//!!! maybe not the right number, just a test
+	printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
+	push_ts_base = local_ts_base;
+    ssize_t result = iio_buffer_push(txbuf);
 	printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 
     if (result < 0) {
@@ -974,6 +978,15 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
             //        inet_ntoa(client_addr.sin_addr),
             //            ntohs(client_addr.sin_port));
             
+			printf("OVP: Received %zd bytes from %s:%d at %dms ending with ", bytes_received,
+				   inet_ntoa(client_addr.sin_addr),
+				   ntohs(client_addr.sin_port),
+				   get_timestamp_ms());
+			for (int i=125; i<134; i++) {
+				printf("%02x ", ovp_frame_buffer[i]);
+			}
+			printf("\n");
+
             // Process the frame
             process_ovp_frame(ovp_frame_buffer, bytes_received);
             
@@ -1168,11 +1181,11 @@ int main (int argc, char **argv)
 
 */
 
-	printf("* Creating non-cyclic IIO buffers with 1 MiS\n");
+	printf("* Creating non-cyclic IIO buffers\n");
 	// original size of the rxbuf
 	//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
 	// size of our rxbuf
-    rxbuf = iio_device_create_buffer(rx, 1024*1, false);
+    rxbuf = iio_device_create_buffer(rx, 134, false); //!!! waht size?
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit();
@@ -1181,7 +1194,7 @@ int main (int argc, char **argv)
 	// original size of the txbuf
 	//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
 	// size of our txbuf
-    txbuf = iio_device_create_buffer(tx, 1024*1, false);
+    txbuf = iio_device_create_buffer(tx, OVP_SINGLE_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit();
@@ -1871,7 +1884,10 @@ int main (int argc, char **argv)
 	// RX and TX sample counters
 	size_t nrx = 0;
 	size_t ntx = 0;
-        uint32_t old_data = 0, new_data = 0;
+    uint32_t old_data = 0, new_data = 0;
+	static uint32_t push_ts_base;
+	uint32_t local_ts_base;
+
 
 	printf("* Starting IO streaming (press CTRL+C to cancel)\n");
 	while (!stop)
@@ -1881,7 +1897,14 @@ int main (int argc, char **argv)
 		ptrdiff_t p_inc;
 
 		// Schedule TX buffer
-		nbytes_tx = iio_buffer_push(txbuf);
+		// nbytes_tx = iio_buffer_push(txbuf);
+
+		local_ts_base = get_timestamp_ms();
+		printf("OVP: time between stream iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
+		push_ts_base = local_ts_base;
+    	nbytes_tx = iio_buffer_push(txbuf);
+		printf("OVP: streaming iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+
 
 		// Use AXI stream transfer count register to see if data is getting to our logic
 		old_data = new_data;
