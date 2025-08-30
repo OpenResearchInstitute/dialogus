@@ -960,6 +960,8 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
     struct sockaddr_in client_addr;
     socklen_t client_len;
     ssize_t bytes_received;
+	uint32_t recv_ts;
+	uint32_t last_recv_ts = 0;
         
     while (ovp_running) {
         client_len = sizeof(client_addr);
@@ -972,41 +974,34 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
             &client_len
         );
         
-        if (bytes_received > 0) {
+        if (bytes_received == OVP_SINGLE_FRAME_SIZE) {
             //printf("OVP: Received %zd bytes from %s:%d\n", 
             //        bytes_received,
             //        inet_ntoa(client_addr.sin_addr),
             //            ntohs(client_addr.sin_port));
             
-			printf("OVP: Received %zd bytes from %s:%d at %dms ending with ", bytes_received,
+			recv_ts = get_timestamp_ms();
+			printf("OVP: Received %zd bytes from %s:%d after %dms ending with ", bytes_received,
 				   inet_ntoa(client_addr.sin_addr),
 				   ntohs(client_addr.sin_port),
-				   get_timestamp_ms());
-			for (int i=125; i<134; i++) {
+				   recv_ts - last_recv_ts);
+			last_recv_ts = recv_ts;
+			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", ovp_frame_buffer[i]);
 			}
 			printf("\n");
 
             // Process the frame
-            process_ovp_frame(ovp_frame_buffer, bytes_received);
-            
+			process_ovp_frame(ovp_frame_buffer, bytes_received);
+		} else if (bytes_received >= 0) {
+			printf("OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
+					bytes_received, OVP_SINGLE_FRAME_SIZE);
+			ovp_frame_errors++;
         } else if (bytes_received < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK && ovp_running) {
                 perror("OVP: UDP receive error"); // don't exit on receive errors
             }
         }
-
-
-
-
-        // ADD THIS DEBUG BLOCK HERE:
-        else if (bytes_received == 0) {
-            printf("OVP: UDP recvfrom returned 0 bytes\n");
-        }
-
-
-
-
     }
     
     printf("OVP: UDP listener thread exiting\n");
@@ -1185,7 +1180,7 @@ int main (int argc, char **argv)
 	// original size of the rxbuf
 	//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
 	// size of our rxbuf
-    rxbuf = iio_device_create_buffer(rx, 134, false); //!!! waht size?
+    rxbuf = iio_device_create_buffer(rx, OVP_SINGLE_FRAME_SIZE, false); //!!! what size?
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit();
