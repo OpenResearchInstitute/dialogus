@@ -1217,8 +1217,6 @@ int main (int argc, char **argv)
 		exit(1);
 	}
 
-    printf("Create a buffer for some transmitted data.\n");
-	// unsigned int transmit_data[4*100];
     dma_interface(dma_virtual_addr);
 
 	printf("Writing to scratch register in TX-DMAC.\n");
@@ -1251,26 +1249,26 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000001);
 	printf("Reading MSK_INIT. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-       // OVP_FRAME_MODE 
-       #ifdef OVP_FRAME_MODE
-       printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-       printf("OVP_FRAME_MODE: Configuring for frame-driven transmission\n");
-       printf("PTT off, loopback off, waiting for OVP frames\n");
-       WRITE_MSK(MSK_Control, 0x00000000);  // All control bits off
-       printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-       printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-       #endif
+	// OVP_FRAME_MODE 
+	#ifdef OVP_FRAME_MODE
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("OVP_FRAME_MODE: Configuring for frame-driven transmission\n");
+	printf("PTT off, loopback off, waiting for OVP frames\n");
+	WRITE_MSK(MSK_Control, 0x00000000);  // All control bits off
+	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	#endif
 
 	//Receiver Active
 	#ifdef RX_ACTIVE
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-    printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver only.\n");
+    printf("RX_ACTIVE on: Writing MSK_CONTROL register for receiver active.\n");
 	printf("PTT and loopback disabled.\n");
 	WRITE_MSK(MSK_Control, 0x00000000);
     printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
-	#else
+	#elif !defined(OVP_FRAME_MODE) && !defined(RF_LOOPBACK)
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
@@ -1278,11 +1276,10 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Control, 0x00000003);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	#endif
 
-	#ifdef RF_LOOPBACK
+	#elif !defined(OVP_FRAME_MODE) && defined(RF_LOOPBACK)
         printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("RF_LOOPACK on: Writing MSK_CONTROL register for RF loopback.\n");
+        printf("RF_LOOPBACK on: Writing MSK_CONTROL register for RF loopback.\n");
         printf("PTT enabled and loopback disabled.\n");
         WRITE_MSK(MSK_Control, 0x00000001);
         printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
