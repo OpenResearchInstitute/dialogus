@@ -583,7 +583,8 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     uint32_t new_xfer_count = READ_MSK(axis_xfer_count);
     uint32_t delta = new_xfer_count - old_xfer_count;
     
-    printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);    
+    printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
+	printf("OVP: Total bytes sent to MSK so far: %u\n", new_xfer_count * 2);  // 4 bytes per transfer, but I and Q both carry same data byte
     return 0;
 }
 
