@@ -55,6 +55,7 @@
 	} \
 }
 
+// Sizes for encapsulated Opulent Voice frames
 #define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
 #define OVP_MAX_FRAME_SIZE      200     // Small safety margin (might regret this)
 
@@ -64,6 +65,21 @@
 #define OVP_HEADER_SIZE 12
 #define OVP_UDP_PORT            57372
 #define OVP_FRAME_PERIOD_MS     40      // Fixed 40ms timing
+
+// Sizes for final over-the-air frames sent to MSK modulator
+#define OVP_SYNC_WORD_SIZE 3       // Size of sync word prepended to each frame
+#define OVP_ENCODED_HEADER_SIZE (OVP_HEADER_SIZE*2)  // Header expands by 2x due to FEC coding
+#define OVP_ENCODED_PAYLOAD_SIZE ((OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE)*2) // Payload expands by 2x due to FEC coding
+// Data expands by 2x due to FEC coding, and a sync word is prepended
+#define OVP_MODULATOR_FRAME_SIZE (OVP_SINGLE_FRAME_SIZE*2 + OVP_SYNC_WORD_SIZE)
+
+// Our 24-bit sync word is a concatenation of the 11-bit Barker sequence and the 13-bit Barker sequence
+// 11-bit Barker: 11100010010
+// 13-bit Barker: 1111100110101
+// Combined:     1110 0010 0101 1111 0011 0101
+// in hex: 0xE25F35
+const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
+
 
 // OVP Pipeline Configuration (if using FPGA pipeline)
 #define OVP_CFG_PREAMBLE_EN     (1 << 3)
@@ -86,7 +102,7 @@
 // RX_ACTIVE on has PTT off and loopback off.
 // RF_LOOPBACK has PTT on and loopback off.
 // RF_LOOPBACK is used for physically looping back TX to RX
-// with a cable and an attentuator.
+// with a cable and an attenuator.
 // OVP_FRAME_MODE sets up a listener for Interlocutor-produced frames.
 // these frames come in from a socket and are then delivered to the
 // modem through memory mapping. 
@@ -188,8 +204,7 @@ int enable_msk_transmission(void);
 int disable_msk_transmission(void);
 int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size);
 int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size);
-int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size);
-
+int process_and_send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size);
 
 #endif
 
@@ -500,25 +515,28 @@ void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
 
 int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size) {
     enable_msk_transmission();
+
+	// Preamble is just a raw bit pattern, send directly to MSK modulator
     return send_ovp_frame_to_msk(preamble_data, preamble_size);
 }
 
 int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size) {
+	// Postamble has a standard header but a special payload pattern,
+	// so it can't undergo full processing. Send directly to MSK modulator.
     int result = send_ovp_frame_to_msk(postamble_data, postamble_size);
+
     // Small delay to ensure postamble is transmitted
     usleep(50000);  // 50ms delay
     disable_msk_transmission();
     return result;
 }
 
-int send_dummy_frame_to_msk(uint8_t *dummy_data, size_t dummy_size) {
-    return send_ovp_frame_to_msk(dummy_data, dummy_size);
-}
-
-
 // Send OVP frame data to MSK modulator via IIO buffer
+// Frame data should already be formatted with sync word + scrambling + FEC coding
+// or filled out as a special (preamble/postamble/dummy) frame
 int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
 
+	static uint32_t old_xfer_count = 0;
 	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
 
@@ -527,12 +545,12 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
         return -1;
     }
     
-    if (!frame_data || frame_size == 0) {
+    if (!frame_data || frame_size != OVP_MODULATOR_FRAME_SIZE) {
         printf("OVP: Error - invalid frame data\n");
         return -1;
     }
     
-    //printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+    printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
     
     // Get buffer pointers and step size
     char *p_dat, *p_end;
@@ -541,7 +559,6 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     
     // Track how much frame data we've sent
     size_t frame_offset = 0;
-    uint32_t old_xfer_count = READ_MSK(axis_xfer_count);
     
     // Fill TX buffer with frame data bytes
     // The MSK modulator expects raw data bytes, not I/Q samples
@@ -553,10 +570,15 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
             // Use both I and Q channels to send 32 bits total per sample
             uint8_t data_byte = frame_data[frame_offset];
 
-            // Pack byte into 16-bit I/Q format for MSK modulator input
-            // MSK will process this as bit data, not as I/Q samples
-            ((int16_t*)p_dat)[0] = (int16_t)(data_byte << 8);  // Real (I) - upper byte
-            ((int16_t*)p_dat)[1] = (int16_t)(data_byte);       // Imag (Q) - lower byte
+            // Pack byte into 16-bit I/Q format for MSK modulator input.
+            // MSK will process this as bit data, not as I/Q samples.
+			// If TX_DATA_WIDTH is 8, use the low byte of the I channel.
+			// If TX_DATA_WIDTH is 16, use the full I channel.
+			// If TX_DATA_WIDTH is 24, use the full I channel and the low byte of the Q channel.
+			// If TX_DATA_WIDTH is 32, use the full I and Q channels.
+			// Since we are sending an odd number of bytes (271) we must use TX_DATA_WIDTH of 8.
+            ((int16_t*)p_dat)[0] = (int16_t)(data_byte);	// Real (I) - lower byte
+            ((int16_t*)p_dat)[1] = (int16_t)(0);			// Imag (Q)
 
             frame_offset++;
         } else {
@@ -584,7 +606,8 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
     uint32_t delta = new_xfer_count - old_xfer_count;
     
     printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
-	printf("OVP: Total bytes sent to MSK so far: %u\n", new_xfer_count * 2);  // 4 bytes per transfer, but I and Q both carry same data byte
+	printf("OVP: Current axis_xfer_count: %u\n", new_xfer_count);
+	old_xfer_count = new_xfer_count;
     return 0;
 }
 
@@ -627,7 +650,7 @@ int start_transmission_session(void) {
     session_ts_base = get_timestamp_ms();
 
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
-    uint8_t preamble_frame[OVP_SINGLE_FRAME_SIZE];  // Full 40ms of data
+    uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];  // Full 40ms of data
     
     // Fill with 1100 repeating pattern (0xCC = 11001100 binary)
     for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
@@ -636,7 +659,7 @@ int start_transmission_session(void) {
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
     //printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
-    send_preamble_frame(preamble_frame, sizeof(preamble_frame));  // UNCOMMENTED
+    send_preamble_frame(preamble_frame, sizeof(preamble_frame));
     
     ovp_transmission_active = 1;
     ovp_sessions_started++;
@@ -661,7 +684,7 @@ int end_transmission_session(void) {
     printf("OVP: Ending transmission session for station %s\n", active_station_id_ascii);
     
     // Send postamble: OVP frame with header + Barker sequence end pattern
-    uint8_t postamble_frame[OVP_SINGLE_FRAME_SIZE];  // Standard OVP frame size
+    uint8_t postamble_frame[OVP_MODULATOR_FRAME_SIZE];  // Standard OVP frame size
     memset(postamble_frame, 0, sizeof(postamble_frame));
     
     // Use active station ID for regulatory compliance
@@ -682,7 +705,7 @@ int end_transmission_session(void) {
     
     // Repeat Barker sequence throughout payload
     int bit_pos = 0;
-    for (int i = 12; i < OVP_SINGLE_FRAME_SIZE; i++) {  // Fill payload section
+    for (int i = 12; i < OVP_MODULATOR_FRAME_SIZE; i++) {  // Fill payload section
         uint8_t byte_val = 0;
         
         for (int bit = 7; bit >= 0; bit--) {  // MSB first
@@ -697,9 +720,9 @@ int end_transmission_session(void) {
         postamble_frame[i] = byte_val;
     }
     
-    // Send postamble frame to MSK modulator (standard 40ms OVP frame)
+    // Send postamble frame to MSK modulator (with OVP header + Barker-11 pattern)
     //printf("OVP: Sending 40ms postamble frame (OVP header + Barker-11 end pattern)\n");
-    send_postamble_frame(postamble_frame, sizeof(postamble_frame));  // UNCOMMENTED
+    send_postamble_frame(postamble_frame, sizeof(postamble_frame));
     
     ovp_transmission_active = 0;
     ovp_sessions_ended++;
@@ -759,17 +782,17 @@ int send_dummy_frame(void) {
     // Create dummy frame using the last received frame as template
     uint8_t dummy_frame[OVP_SINGLE_FRAME_SIZE];
     
-    // Start with the last real frame structure
-    memcpy(dummy_frame, last_frame_payload, OVP_SINGLE_FRAME_SIZE);
+    // Start with the header from the last real frame structure
+    memcpy(dummy_frame, last_frame_payload, OVP_HEADER_SIZE);
     
     // Modify payload section (bytes 12+) to silence pattern
-    memset(dummy_frame + 12, 0x00, sizeof(dummy_frame)-12);  // Silence/padding in payload
+    memset(dummy_frame + OVP_HEADER_SIZE, 0x00, sizeof(dummy_frame)-OVP_HEADER_SIZE);  // Silence/padding in payload
     
-    // Send to MSK modulator
-    send_dummy_frame_to_msk(dummy_frame, sizeof(dummy_frame));  // UNCOMMENTED
+    // Dummy frame is intended to be interpreted as valid by the receiver,
+	// so we process it normally (scrambling + FEC coding).
+	int result = process_and_send_ovp_frame_to_msk(dummy_frame, sizeof(dummy_frame));
     ovp_dummy_frames_sent++;  // Update statistics
-    
-    return 0;
+    return result;
 }
 
 
@@ -846,31 +869,63 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     return 0;
 }
 
-// Process OVP frame payload through software pipeline (corrected - no per-frame preamble/postamble)
+// FEC-encode OVP header
+void encode_ovp_header(uint8_t *input, uint8_t *output) {
+	memcpy(output, input, OVP_HEADER_SIZE);
+	memcpy(output + OVP_HEADER_SIZE, input, OVP_HEADER_SIZE);  // Simple repetition placeholder
+}
+
+// FEC-encode OVP payload
+void encode_ovp_payload(uint8_t *input, uint8_t *output) {
+	memcpy(output, input, OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE);
+	memcpy(output + (OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE), input, OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE);  // Simple repetition placeholder
+}
+
+// Process OVP frame payload through software pipeline
 int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size, 
                                 uint8_t *processed_data, size_t *processed_size) {
-        
-    // The OVP frame is transmitted as-is (no preamble/postamble per frame)
-    // Preamble/postamble are only at the beginning/end of transmission sessions
-    
-    if (frame_size < OVP_HEADER_SIZE) {
-        printf("OVP: Frame too short\n");
+	uint8_t *p = processed_data;
+	int count = 0;
+
+    if (frame_size != OVP_SINGLE_FRAME_SIZE) {
+        printf("OVP: Wrong frame size %d\n", frame_size);
         return -1;
     }
-    
-    // The complete OVP frame gets transmitted directly
-    // This includes the 12-byte header + COBS-encoded payload
-    memcpy(processed_data, ovp_frame, frame_size);
-    *processed_size = frame_size;
-    
-    printf("OVP: Frame ready for MSK transmission: %zu bytes\n", *processed_size);
+
+	uint8_t encoded_header[OVP_HEADER_SIZE * 2];
+	encode_ovp_header(ovp_frame, encoded_header);
+
+	uint8_t encoded_payload[(OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE) * 2];
+	encode_ovp_payload(ovp_frame + OVP_HEADER_SIZE, encoded_payload);
+
+	// Components of a transmitted OVP frame:
+	memcpy(p, ovp_sync_word, OVP_SYNC_WORD_SIZE);
+	p += OVP_SYNC_WORD_SIZE;
+	count += OVP_SYNC_WORD_SIZE;
+
+	memcpy(p, encoded_header, OVP_ENCODED_HEADER_SIZE);
+	p += OVP_ENCODED_HEADER_SIZE;
+	count += OVP_ENCODED_HEADER_SIZE;
+
+	memcpy(p, encoded_payload, OVP_ENCODED_PAYLOAD_SIZE);
+	count += OVP_ENCODED_PAYLOAD_SIZE;
+
+	if (count != OVP_MODULATOR_FRAME_SIZE) {
+		printf("OVP: Modulator frame size %d does not match expected %d\n", count, OVP_MODULATOR_FRAME_SIZE);
+		return -1;
+	}
+
+	*processed_size = count;
+
+	// The processed_data buffer now contains the full modulator frame
+	// ready for transmission via MSK modulator
     return 0;
 }
 
 // Process OVP frame payload through FPGA pipeline (when available)
 int process_ovp_payload_fpga(uint8_t *payload, size_t payload_size) {
     
-    printf("OVP: Processing %zu payload bytes (FPGA pipeline)\n", payload_size);
+    //printf("OVP: Processing %zu payload bytes (FPGA pipeline)\n", payload_size);
     
     // Check if FPGA pipeline is available and configured
     // This would check pipeline registers from msk_top_regs.h
@@ -898,8 +953,37 @@ int process_ovp_payload_fpga(uint8_t *payload, size_t payload_size) {
     return 0;
 }
 
+// Complete processing and send an OVP frame to MSK modulator
+int process_and_send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
+    
+    // Process the frame (no preamble/postamble per frame)
+    int result;
+    #ifdef USE_FPGA_PIPELINE
+    result = process_ovp_payload_fpga(frame_data, frame_size);
+    #else
+    uint8_t processed_data[300];  // Just frame + small margin
+    size_t processed_size;
+    result = process_ovp_payload_software(frame_data, frame_size, processed_data, &processed_size);
+
+    if (result == 0) {
+        // Send frame data to MSK modulator (no additional framing)
+        send_ovp_frame_to_msk(processed_data, processed_size);
+    }
+    #endif
+    
+    if (result == 0) {
+        ovp_frames_processed++;
+    } else {
+        ovp_frame_errors++;
+    }
+    
+    return result;
+}
+
 // Process complete OVP frame (updated with station ID tracking)
 int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
+	int result;
+
     ovp_frames_received++;
     
     // Validate frame
@@ -929,31 +1013,11 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     if (!ovp_transmission_active) {
         start_transmission_session();
     }
-    
-    printf("OVP: Processing real frame %zu bytes from %s\n", frame_size, active_station_id_ascii);
-    
-    // Process the frame (no preamble/postamble per frame)
-    int result;
-    #ifdef USE_FPGA_PIPELINE
-    result = process_ovp_frame_fpga(frame_data, frame_size);
-    #else
-    uint8_t processed_data[300];  // Just frame + small margin
-    size_t processed_size;
-    result = process_ovp_payload_software(frame_data, frame_size, processed_data, &processed_size);
-    
-    if (result == 0) {
-        // Send frame data to MSK modulator (no additional framing)
-        send_ovp_frame_to_msk(processed_data, processed_size);
-    }
-    #endif
-    
-    if (result == 0) {
-        ovp_frames_processed++;
-    } else {
-        ovp_frame_errors++;
-    }
-    
-    return result;
+
+	printf("OVP: Processing real frame %zu bytes from %s\n", frame_size, active_station_id_ascii);
+
+	result = process_and_send_ovp_frame_to_msk(frame_data, frame_size);
+	return result;
 }
 
 // UDP listener thread
@@ -1169,10 +1233,10 @@ int main (int argc, char **argv)
         if (ret < 0) {
                 char timeout_test[256];
                 iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
-                printf("* set_timout failed : %s\n", timeout_test);
+                printf("* set_timeout failed : %s\n", timeout_test);
         }
         else {
-                printf("* set_timout returned %d, which is a success.\n", ret);
+                printf("* set_timeout returned %d, which is a success.\n", ret);
         }
 
 */
@@ -1190,7 +1254,7 @@ int main (int argc, char **argv)
 	// original size of the txbuf
 	//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
 	// size of our txbuf
-    txbuf = iio_device_create_buffer(tx, OVP_SINGLE_FRAME_SIZE, false);
+    txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit();
@@ -1370,8 +1434,11 @@ int main (int argc, char **argv)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
-	printf("Set TX_DATA_WIDTH to 32.\n");
-	WRITE_MSK(Tx_Data_Width, 0x00000020);
+
+	// We must use a TX data width of 8, because we are sending an odd number of bytes (271)
+	printf("Set TX_DATA_WIDTH to 8.\n");
+	WRITE_MSK(Tx_Data_Width, 0x00000008);
+
 	printf("Read TX_DATA_WIDTH.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
 
