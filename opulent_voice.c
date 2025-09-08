@@ -22,7 +22,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <errno.h>
-#endif
+#endif // OVP_FRAME_MODE
 
 /* for pow() */
 #include <math.h>
@@ -57,21 +57,22 @@
 
 // Sizes for encapsulated Opulent Voice frames
 #define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
-#define OVP_MAX_FRAME_SIZE      200     // Small safety margin (might regret this)
 
 #ifdef OVP_FRAME_MODE
 // Opulent Voice Protocol constants
 #define OVP_MAGIC_BYTES 0xBBAADD
 #define OVP_HEADER_SIZE 12
+#define OVP_PAYLOAD_SIZE 122
 #define OVP_UDP_PORT            57372
 #define OVP_FRAME_PERIOD_MS     40      // Fixed 40ms timing
 
 // Sizes for final over-the-air frames sent to MSK modulator
 #define OVP_SYNC_WORD_SIZE 3       // Size of sync word prepended to each frame
-#define OVP_ENCODED_HEADER_SIZE (OVP_HEADER_SIZE*2)  // Header expands by 2x due to FEC coding
-#define OVP_ENCODED_PAYLOAD_SIZE ((OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE)*2) // Payload expands by 2x due to FEC coding
+#define OVP_ENCODED_HEADER_SIZE (OVP_HEADER_SIZE * 2)	// Header expands by 2x due to FEC coding
+#define OVP_ENCODED_PAYLOAD_SIZE (OVP_PAYLOAD_SIZE * 2)	// Payload expands by 2x due to FEC coding
 // Data expands by 2x due to FEC coding, and a sync word is prepended
-#define OVP_MODULATOR_FRAME_SIZE (OVP_SINGLE_FRAME_SIZE*2 + OVP_SYNC_WORD_SIZE)
+#define OVP_MODULATOR_FRAME_SIZE (OVP_SYNC_WORD_SIZE + OVP_ENCODED_HEADER_SIZE + OVP_ENCODED_PAYLOAD_SIZE)
+#define OVP_MODULATOR_PAYLOAD_OFFSET (OVP_SYNC_WORD_SIZE + OVP_ENCODED_HEADER_SIZE)
 
 // Our 24-bit sync word is a concatenation of the 11-bit Barker sequence and the 13-bit Barker sequence
 // 11-bit Barker: 11100010010
@@ -87,11 +88,7 @@ const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
 #define OVP_CFG_WHITENING_EN    (1 << 1)
 #define OVP_CFG_SCRAMBLING_EN   (1 << 2)
 #define OVP_CFG_POSTAMBLE_EN    (1 << 4)
-
-// Timeout constants
-#define OVP_PIPELINE_TIMEOUT_MS 5000
-#define OVP_FRAME_TIMEOUT_MS    100
-#endif
+#endif // OVP_FRAME_MODE
 
 //ENDLESS_PRBS will block STREAMING as is
 
@@ -158,32 +155,44 @@ float percent_error = 55.0;
 int i; //index variable for loops
 
 
-
-
-
-
-
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 #ifdef OVP_FRAME_MODE
 // OVP UDP Interface
 static int ovp_udp_socket = -1;
 static volatile int ovp_transmission_active = 0;
-static struct timespec last_frame_time;
 static struct sockaddr_in ovp_listen_addr;
 static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
+static pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
+
+// OVP periodic reporting
+static pthread_t ovp_reporter_thread;
+
+// OVP timeline manager
+int64_t decision_time = 0;		// us timestamp after which a new frame is late
+int ovp_txbufs_this_frame = 0;	// number of UDP frames seen before decision time (should be 1)
+static pthread_t ovp_timeline_thread;
+static pthread_cond_t timeline_start = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t tls_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // OVP session management variables
 static unsigned char active_station_id_binary[6] = {0,0,0,0,0,0};
-static char active_station_id_ascii[11] = "";	// 10 chars + null terminator
-static uint8_t last_frame_payload[OVP_MAX_FRAME_SIZE];
+static char active_station_id_ascii[11] = "";	// 10 chars + null terminator is max possible
 static int hang_timer_active = 0;
-static int dummy_frames_sent = 0;
-static int hang_timer_frames = 25;  // Number of dummy frames before ending session
+static int dummy_frames_sent = 0;	// Count of dummy frames sent in this hang time
+static int hang_timer_frames = 25;	// Number of dummy frames before ending session
 static uint32_t session_ts_base = 0;	// timestamp at start of a session
+static int64_t session_T0 = 0;	// Origin of time for this session (microseconds)
 
 // OVP Frame Buffer (sized for actual frames)
-static uint8_t ovp_frame_buffer[OVP_MAX_FRAME_SIZE];
+static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
+
+// OVP modulator frame buffer
+// This buffer is used whenever we build a frame to send to the
+// modulator. It's global to simplify the building of dummy frames
+// and postamble frames, which reuse the sync word and frame header
+// from the preceding Opulent Voice frames.
+static uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
 
 // OVP Statistics
 static uint64_t ovp_frames_received = 0;
@@ -192,29 +201,24 @@ static uint64_t ovp_frame_errors = 0;
 static uint64_t ovp_sessions_started = 0;
 static uint64_t ovp_sessions_ended = 0;
 static uint64_t ovp_dummy_frames_sent = 0;
+static uint64_t ovp_untimely_frames = 0;
 
 // Opulent Voice Protocol functions
 int start_transmission_session(void);
-int end_transmission_session(void);
-int send_dummy_frame(void);
+void end_transmission_session_normally(void);
+void abort_transmission_session(void);
 void stop_ovp_listener(void);
+void stop_timeline_manager(void);
+void stop_periodic_statistics_reporter(void);
 void print_ovp_statistics(void);
-int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size);
 int enable_msk_transmission(void);
 int disable_msk_transmission(void);
-int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size);
-int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size);
-int process_and_send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size);
-
-#endif
-
-
-
-
-
-
-
-
+int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size);
+void encode_ovp_header(uint8_t *input, uint8_t *output);
+void encode_ovp_payload(uint8_t *input, uint8_t *output);
+void create_dummy_frame(void);
+void create_postamble_frame(void);
+#endif // OVP_FRAME_MODE
 
 
 /* Register addresses for using the hardware timer */
@@ -283,6 +287,13 @@ uint32_t get_timestamp_ms(void) {
 	return (uint32_t)ts_ms;
 }
 
+uint32_t get_timestamp_us(void) {
+	uint64_t ts = get_timestamp();
+	double ts_seconds = ts / (double)COUNTS_PER_SECOND;
+	double ts_ms = ts_seconds * 1000000.0;
+	return (uint32_t)ts_ms;
+}
+
 void print_timestamp(void) {
 	printf("timestamp: %f\n", get_timestamp() / (double)COUNTS_PER_SECOND);
 }
@@ -292,10 +303,10 @@ enum iodev { RX, TX };
 
 /* common RX and TX streaming params */
 struct stream_cfg {
-	long long bw_hz; // Analog banwidth in Hz
+	long long bw_hz; // Analog bandwidth in Hz
 	long long fs_hz; // Baseband sample rate in Hz
 	long long lo_hz; // Local oscillator frequency in Hz
-	const char* rfport; // Port name
+	const char* rf_port; // Port name
 };
 
 /* static scratch mem for strings */
@@ -317,15 +328,19 @@ static bool stop;
 static void cleanup_and_exit(void)
 {
 	#ifdef OVP_FRAME_MODE
-	    printf("Stopping OVP listener...\n");
+	    printf("Stopping threads...\n");
 	    // End any active transmission session
 	    if (ovp_transmission_active) {
-	        end_transmission_session();
+	        abort_transmission_session();
 	    }
 
 	    stop_ovp_listener();
-	    print_ovp_statistics();
-	#endif
+		stop_timeline_manager();
+		stop_periodic_statistics_reporter();
+
+		print_ovp_statistics();	// make sure one last report goes out, even if it's a duplicate
+
+	#endif // OVP_FRAME_MODE
 
 
 	printf("* Destroying buffers\n");
@@ -345,16 +360,7 @@ static void cleanup_and_exit(void)
 
 static void handle_sig(int sig)
 {
-	printf("Waiting for process to finish... Got signal %d\n", sig);
-
-	#ifdef OVP_FRAME_MODE
-	    // OVP cleanup in signal handler
-	    if (ovp_transmission_active) {
-	        end_transmission_session();
-	    }
-	    stop_ovp_listener();
-	#endif
-
+	printf("Got signal %d, shutting down ...\n", sig);
 	stop = true;
 }
 
@@ -438,7 +444,7 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	// Configure phy and lo channels
 	printf("* Acquiring AD9361 phy channel %d\n", chid);
 	if (!get_phy_chan(type, chid, &chn)) {	return false; }
-	wr_ch_str(chn, "rf_port_select",     cfg->rfport);
+	wr_ch_str(chn, "rf_port_select",     cfg->rf_port);
 	wr_ch_lli(chn, "rf_bandwidth",       cfg->bw_hz);
 	wr_ch_lli(chn, "sampling_frequency", cfg->fs_hz);
 
@@ -513,33 +519,13 @@ void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
 
 }
 
-int send_preamble_frame(uint8_t *preamble_data, size_t preamble_size) {
-    enable_msk_transmission();
-
-	// Preamble is just a raw bit pattern, send directly to MSK modulator
-    return send_ovp_frame_to_msk(preamble_data, preamble_size);
-}
-
-int send_postamble_frame(uint8_t *postamble_data, size_t postamble_size) {
-	// Postamble has a standard header but a special payload pattern,
-	// so it can't undergo full processing. Send directly to MSK modulator.
-    int result = send_ovp_frame_to_msk(postamble_data, postamble_size);
-
-    // Small delay to ensure postamble is transmitted
-    usleep(50000);  // 50ms delay
-    disable_msk_transmission();
-    return result;
-}
-
-// Send OVP frame data to MSK modulator via IIO buffer
+// Send OVP frame data to MSK modulator via IIO buffer in two steps.
 // Frame data should already be formatted with sync word + scrambling + FEC coding
-// or filled out as a special (preamble/postamble/dummy) frame
-int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
-
-	static uint32_t old_xfer_count = 0;
-	static uint32_t push_ts_base;
-	uint32_t local_ts_base;
-
+// or filled out as a special (preamble/postamble/dummy) frame.
+// Step 1: move the data into txbuf using iio calls
+// (Step 2: iio_push txbuf to the kernel)
+// This is step 1.
+int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
     if (!txbuf) {
         printf("OVP: Error - TX buffer not initialized\n");
         return -1;
@@ -587,8 +573,17 @@ int send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
             ((int16_t*)p_dat)[1] = 0;
         }
     }
-    
-    // Push buffer to MSK modulator
+
+    return 0;
+}
+
+// Send OVP frame data to MSK modulator via IIO buffer in two steps.
+// Step 2: iio_push txbuf to the kernel
+int push_txbuf_to_msk(void) {
+
+	static uint32_t old_xfer_count = 0;
+	static uint32_t push_ts_base;
+	uint32_t local_ts_base;
 
 	local_ts_base = get_timestamp_ms();
 	printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
@@ -647,7 +642,13 @@ int start_transmission_session(void) {
     }
     
     printf("OVP: Starting transmission session for station %s\n", active_station_id_ascii);
-    session_ts_base = get_timestamp_ms();
+    session_ts_base = get_timestamp_ms();	// for debug prints
+
+	session_T0 = get_timestamp_us();	// used for timeline management
+	decision_time = session_T0 + 60e3;	// 60ms to the middle of the next frame, T0-referenced
+
+	// Inform the timeline manager to start managing the session
+	pthread_cond_signal(&timeline_start);
 
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
     uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];  // Full 40ms of data
@@ -659,70 +660,26 @@ int start_transmission_session(void) {
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
     //printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
-    send_preamble_frame(preamble_frame, sizeof(preamble_frame));
-    
+	load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
+	enable_msk_transmission();
+	push_txbuf_to_msk();
+
     ovp_transmission_active = 1;
     ovp_sessions_started++;
-    clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
-    
-    // Account for preamble transmission time
-    last_frame_time.tv_nsec += 40000000;  // Add 40ms
-    if (last_frame_time.tv_nsec >= 1000000000) {
-        last_frame_time.tv_sec++;
-        last_frame_time.tv_nsec -= 1000000000;
-    }
-    
+
     return 0;
 }
 
 
-int end_transmission_session(void) {
-    if (!ovp_transmission_active) {
-        return 0;  // No active session
-    }
-    
+void end_transmission_session_normally(void) {
+
     printf("OVP: Ending transmission session for station %s\n", active_station_id_ascii);
-    
-    // Send postamble: OVP frame with header + Barker sequence end pattern
-    uint8_t postamble_frame[OVP_MODULATOR_FRAME_SIZE];  // Standard OVP frame size
-    memset(postamble_frame, 0, sizeof(postamble_frame));
-    
-    // Use active station ID for regulatory compliance
-    memcpy(postamble_frame, active_station_id_binary, 6);
-    
-    // Special auth token to indicate postamble
-    postamble_frame[6] = 0xEE;  // Postamble marker
-    postamble_frame[7] = 0x00;
-    postamble_frame[8] = 0xDD;
-    
-    // set reserved field to zeros
-    postamble_frame[9] = 0x00;
-    postamble_frame[10] = 0x00;
-    postamble_frame[11] = 0x00;
-    
-    // Fill payload with 11-bit Barker sequence: 11100010010
-    uint16_t barker_11 = 0x0712;  // 11100010010 in binary (right-aligned)
-    
-    // Repeat Barker sequence throughout payload
-    int bit_pos = 0;
-    for (int i = 12; i < OVP_MODULATOR_FRAME_SIZE; i++) {  // Fill payload section
-        uint8_t byte_val = 0;
-        
-        for (int bit = 7; bit >= 0; bit--) {  // MSB first
-            // Get current bit from Barker sequence
-            int barker_bit = (barker_11 >> (bit_pos % 11)) & 1;
-            if (barker_bit) {
-                byte_val |= (1 << bit);
-            }
-            bit_pos++;
-        }
-        
-        postamble_frame[i] = byte_val;
-    }
-    
-    // Send postamble frame to MSK modulator (with OVP header + Barker-11 pattern)
-    //printf("OVP: Sending 40ms postamble frame (OVP header + Barker-11 end pattern)\n");
-    send_postamble_frame(postamble_frame, sizeof(postamble_frame));
+
+	// There's no definite way to synchronize with the end of the postamble
+	// going out the antenna. We'll have to settle for a fixed wait time,
+	// which should work provided the timeline is working as designed.
+	usleep(65000);
+	disable_msk_transmission();
     
     ovp_transmission_active = 0;
     ovp_sessions_ended++;
@@ -730,72 +687,100 @@ int end_transmission_session(void) {
     dummy_frames_sent = 0;
 
     printf("OVP: Session ended after %dms, ready for next transmission\n", get_timestamp_ms()-session_ts_base);
-
-    return 0;
 }
 
+void abort_transmission_session(void) {
 
+	if (ovp_transmission_active) {
+		printf("OVP: Aborting transmission session\n");
+	}
 
-int check_hang_timer(void) {
-    if (!ovp_transmission_active) {
-        return 0;  // No active session
-    }
+	disable_msk_transmission();
     
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    
-    // Calculate time since last real frame
-    int32_t elapsed_ms = ((now.tv_sec - last_frame_time.tv_sec) * 1000) +
-                         ((now.tv_nsec - last_frame_time.tv_nsec) / 1000000);
+	if (ovp_transmission_active) {
+		ovp_sessions_ended++;
+	}
 
-    // Check if we need to start/continue hang timer
-    if (elapsed_ms >= 40) {  // 40ms since last frame - time for next frame
-        if (!hang_timer_active) {
-            printf("OVP: No new frame received in %d ms, starting hang timer\n", elapsed_ms);
-            hang_timer_active = 1;
-            dummy_frames_sent = 0;
-        }
-        
-        // Send dummy frame to maintain continuous transmission
-        if (dummy_frames_sent < hang_timer_frames) {
-            send_dummy_frame();
-            dummy_frames_sent++;
-            
-            // Update timing for next dummy frame
-            last_frame_time.tv_nsec += 40000000;  // Add 40ms
-            if (last_frame_time.tv_nsec >= 1000000000) {
-                last_frame_time.tv_sec++;
-                last_frame_time.tv_nsec -= 1000000000;
-            }
-        } else {
-            // Sent all dummy frames, now end session
-            end_transmission_session();
-            return 1;  // Session ended
-        }
-    }
-    
-    return 0;  // Session continues
+    hang_timer_active = 0;
+    dummy_frames_sent = 0;
+
+	if (ovp_transmission_active) {
+		printf("OVP: Session aborted after %dms\n", get_timestamp_ms()-session_ts_base);
+		ovp_transmission_active = 0;
+	}
 }
 
+void create_dummy_frame(void) {
+	static uint8_t ovp_dummy_payload[] = {  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+											0,0 };
+	static uint8_t modulator_dummy_payload[OVP_ENCODED_PAYLOAD_SIZE];
+	static bool payload_computed = false;
 
-int send_dummy_frame(void) {
-    // Create dummy frame using the last received frame as template
-    uint8_t dummy_frame[OVP_SINGLE_FRAME_SIZE];
-    
-    // Start with the header from the last real frame structure
-    memcpy(dummy_frame, last_frame_payload, OVP_HEADER_SIZE);
-    
-    // Modify payload section (bytes 12+) to silence pattern
-    memset(dummy_frame + OVP_HEADER_SIZE, 0x00, sizeof(dummy_frame)-OVP_HEADER_SIZE);  // Silence/padding in payload
-    
-    // Dummy frame is intended to be interpreted as valid by the receiver,
-	// so we process it normally (scrambling + FEC coding).
-	int result = process_and_send_ovp_frame_to_msk(dummy_frame, sizeof(dummy_frame));
-    ovp_dummy_frames_sent++;  // Update statistics
-    return result;
+	// We are taking advantage of the fact that the payload of a dummy
+	// frame is always the same. Payload is all zeroes, and the convolutional
+	// encoding always gets the same encoded payload (it's used as a block code).
+	if (! payload_computed) {
+		encode_ovp_payload(ovp_dummy_payload, modulator_dummy_payload);
+		payload_computed = true;
+	}
+
+	// We are taking advantage of the modulator_frame_buffer being global,
+	// and dummy frames always coming after normal frames that were built
+	// in the modulator_frame_buffer. We only need to change the payload.
+	//
+	// Note that this doesn't update the authentication tag in the frame.
+	// We are not able to do that in any case, since authentication is
+	// handled by Interlocutor, not this program.
+	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
+	memcpy(p, modulator_dummy_payload, OVP_ENCODED_PAYLOAD_SIZE);
 }
 
+void create_postamble_frame(void) {
 
+	static uint8_t modulator_postamble_payload[OVP_ENCODED_PAYLOAD_SIZE];
+	static bool payload_computed = false;
+
+	// We are taking advantage of the fact that the payload of a postamble
+	// frame is always the same. Payload is fixed (copies of the barker-11
+	// code), and the convolutional encoding always gets the same encoded
+	// payload (it's used as a block code).
+	if (! payload_computed) {
+		// Fill payload with 11-bit Barker sequence: 11100010010
+		uint16_t barker_11 = 0x0712;  // 11100010010 in binary (right-aligned)
+
+		// Repeat Barker sequence throughout payload
+		int bit_pos = 0;
+		for (int i=0; i < OVP_ENCODED_PAYLOAD_SIZE; i++) {  // Fill payload section
+			uint8_t byte_val = 0;
+
+			for (int bit = 7; bit >= 0; bit--) {  // MSB first
+				// Get current bit from Barker sequence
+				int barker_bit = (barker_11 >> (bit_pos % 11)) & 1;
+				if (barker_bit) {
+					byte_val |= (1 << bit);
+				}
+				bit_pos++;
+			}
+			modulator_postamble_payload[i] = byte_val;
+		}
+		payload_computed = true;
+	}
+
+	// We are taking advantage of the modulator_frame_buffer being global,
+	// and the postamble frame always coming after other frames that were built
+	// in the modulator_frame_buffer. We only need to change the payload.
+	//
+	// Note that this doesn't update the authentication tag in the frame.
+	// We are not able to do that in any case, since authentication is
+	// handled by Interlocutor, not this program.
+	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
+	memcpy(p, modulator_postamble_payload, OVP_ENCODED_PAYLOAD_SIZE);
+}
 
 
 /* future FPGA pipeline code
@@ -881,10 +866,9 @@ void encode_ovp_payload(uint8_t *input, uint8_t *output) {
 	memcpy(output + (OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE), input, OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE);  // Simple repetition placeholder
 }
 
+
 // Process OVP frame payload through software pipeline
-int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size, 
-                                uint8_t *processed_data, size_t *processed_size) {
-	uint8_t *p = processed_data;
+int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 	int count = 0;
 
     if (frame_size != OVP_SINGLE_FRAME_SIZE) {
@@ -892,11 +876,13 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size,
         return -1;
     }
 
-	uint8_t encoded_header[OVP_HEADER_SIZE * 2];
+	uint8_t encoded_header[OVP_ENCODED_HEADER_SIZE];
 	encode_ovp_header(ovp_frame, encoded_header);
 
-	uint8_t encoded_payload[(OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE) * 2];
+	uint8_t encoded_payload[OVP_ENCODED_PAYLOAD_SIZE];
 	encode_ovp_payload(ovp_frame + OVP_HEADER_SIZE, encoded_payload);
+
+	uint8_t *p = modulator_frame_buffer;
 
 	// Components of a transmitted OVP frame:
 	memcpy(p, ovp_sync_word, OVP_SYNC_WORD_SIZE);
@@ -915,9 +901,7 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size,
 		return -1;
 	}
 
-	*processed_size = count;
-
-	// The processed_data buffer now contains the full modulator frame
+	// The modulator_frame_buffer now contains the full modulator frame
 	// ready for transmission via MSK modulator
     return 0;
 }
@@ -938,11 +922,8 @@ int process_ovp_payload_fpga(uint8_t *payload, size_t payload_size) {
     // Trigger processing
     // Wait for completion
     
-    // For now, fall back to software processing
-    uint8_t processed_data[4096];
-    size_t processed_size;
-    
-    if (process_ovp_payload_software(payload, payload_size, processed_data, &processed_size) < 0) {
+    // For now, fall back to software processing    
+    if (process_ovp_payload_software(payload, payload_size) < 0) {
         return -1;
     }
     
@@ -954,22 +935,24 @@ int process_ovp_payload_fpga(uint8_t *payload, size_t payload_size) {
 }
 
 // Complete processing and send an OVP frame to MSK modulator
-int process_and_send_ovp_frame_to_msk(uint8_t *frame_data, size_t frame_size) {
+int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) {
     
     // Process the frame (no preamble/postamble per frame)
     int result;
     #ifdef USE_FPGA_PIPELINE
     result = process_ovp_payload_fpga(frame_data, frame_size);
-    #else
-    uint8_t processed_data[300];  // Just frame + small margin
-    size_t processed_size;
-    result = process_ovp_payload_software(frame_data, frame_size, processed_data, &processed_size);
+    #else // not USE_FPGA_PIPELINE
+    result = process_ovp_payload_software(frame_data, frame_size);
 
     if (result == 0) {
-        // Send frame data to MSK modulator (no additional framing)
-        send_ovp_frame_to_msk(processed_data, processed_size);
+		// Preload txbuf with the OVP frame. We'll push it at the decision time.
+		// If we've already preloaded txbuf for this frame slot, this overwrites.
+		load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
+		ovp_txbufs_this_frame++;	// for detection of overwrites.
+		// Do not push_txbuf_to_msk() at this time. In case of overwrites,
+		// we want to transmit the last one only.
     }
-    #endif
+    #endif // not USE_FPGA_PIPELINE
     
     if (result == 0) {
         ovp_frames_processed++;
@@ -995,20 +978,14 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
     // Extract and store station ID for regulatory compliance
     memcpy(active_station_id_binary, frame_data, 6);  // Station ID length of 6 bytes
 	decode_station_id(active_station_id_binary, active_station_id_ascii);
-    
-    // Store complete frame for dummy frame generation
-    memcpy(last_frame_payload, frame_data, frame_size);
-    
+
     // Real frame received - cancel hang timer
     if (hang_timer_active) {
         printf("OVP: Real frame received from %s, canceling hang timer\n", active_station_id_ascii);
         hang_timer_active = 0;
         dummy_frames_sent = 0;
     }
-    
-    // Update frame timing
-    clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
-    
+
     // Start transmission session if not active
     if (!ovp_transmission_active) {
         start_transmission_session();
@@ -1016,7 +993,7 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 
 	printf("OVP: Processing real frame %zu bytes from %s\n", frame_size, active_station_id_ascii);
 
-	result = process_and_send_ovp_frame_to_msk(frame_data, frame_size);
+	result = process_and_send_ovp_frame_to_txbuf(frame_data, frame_size);
 	return result;
 }
 
@@ -1029,6 +1006,8 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 	uint32_t last_recv_ts = 0;
         
     while (ovp_running) {
+		pthread_mutex_lock(&timeline_lock);
+
         client_len = sizeof(client_addr);
         bytes_received = recvfrom(
             ovp_udp_socket,
@@ -1067,6 +1046,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
                 perror("OVP: UDP receive error"); // don't exit on receive errors
             }
         }
+		pthread_mutex_unlock(&timeline_lock);
     }
     
     printf("OVP: UDP listener thread exiting\n");
@@ -1112,7 +1092,89 @@ void stop_ovp_listener(void) {
     }
 }
 
+// OVP Timeline Manager thread
+// Wakes up at each frame decision time (Td) during an active session
+// and sends a frame. In priority order:
+//		* A real frame if one is available, or
+//		* A postamble frame if the final hang time is completed, or
+//		* A dummy frame.
+void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
+	int64_t now;
+	static int hang_time_dummy_count = 0;
+	uint32_t local_ts_base;
 
+	while (!stop) {
+		if (ovp_transmission_active) {
+			pthread_mutex_lock(&timeline_lock);
+			if (decision_time != 0) {
+				now = get_timestamp_us();
+				if (now >= decision_time) {
+					if (ovp_txbufs_this_frame > 0) {
+						if (ovp_txbufs_this_frame > 1) {
+							ovp_untimely_frames += ovp_txbufs_this_frame - 1;
+						}
+						ovp_frames_processed++;
+						hang_time_dummy_count = 0;
+						hang_timer_active = 0;
+					} else {
+						if (hang_time_dummy_count >= hang_timer_frames) {
+							create_postamble_frame();
+							hang_time_dummy_count = 0;
+							hang_timer_active = 0;
+							ovp_transmission_active = 0;
+						} else {
+							create_dummy_frame();
+							ovp_dummy_frames_sent++;
+							hang_time_dummy_count++;
+							hang_timer_active = 1;
+						}
+					}
+					local_ts_base = get_timestamp_ms();
+					iio_buffer_push(txbuf);
+					printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					decision_time += 40e3;
+					ovp_txbufs_this_frame = 0;
+				}
+
+				// handle normal end of a transmission session (postamble was just pushed)
+				if (! ovp_transmission_active) {
+					end_transmission_session_normally();
+				}
+			}
+			pthread_mutex_unlock(&timeline_lock);
+
+			now = get_timestamp_us();
+			if (decision_time - now > 0) {
+				usleep(decision_time - now);	// wait until next decision time
+			}
+
+		} else {
+			printf("OVP: Timeline paused until next transmission\n");
+			pthread_cond_wait(&timeline_start, &tls_lock);
+		}
+	}
+
+	printf("OVP: Timeline manager thread exiting\n");
+	return NULL;
+}
+
+int start_timeline_manager(void) {
+    if (pthread_create(&ovp_timeline_thread, NULL, ovp_timeline_manager_thread, NULL) != 0) {
+        perror("OVP: Failed to create timeline manager thread");
+        return -1;
+    }
+    
+    printf("OVP: Timeline manager started successfully\n");
+    return 0;
+}
+
+void stop_timeline_manager(void) {
+    if (ovp_timeline_thread) {
+        pthread_join(ovp_timeline_thread, NULL);
+    }
+        
+    printf("OVP: Timeline manager stopped\n");
+}
 
 
 void print_ovp_statistics(void) {
@@ -1120,6 +1182,7 @@ void print_ovp_statistics(void) {
     printf("Frames received:     %llu\n", (unsigned long long)ovp_frames_received);
     printf("Frames processed:    %llu\n", (unsigned long long)ovp_frames_processed);
     printf("Frame errors:        %llu\n", (unsigned long long)ovp_frame_errors);
+	printf("Untimely frames:     %llu\n", (unsigned long long)ovp_untimely_frames);
     printf("Dummy frames sent:   %llu\n", (unsigned long long)ovp_dummy_frames_sent);
     printf("Sessions started:    %llu\n", (unsigned long long)ovp_sessions_started);
     printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
@@ -1133,22 +1196,45 @@ void print_ovp_statistics(void) {
                dummy_frames_sent, hang_timer_frames, active_station_id_ascii);
     }
     if (ovp_frames_received > 0) {
-        printf("Success rate:        %.1f%%\n", 
-               (double)ovp_frames_processed / ovp_frames_received * 100.0);
+		printf("Success rate:        %.1f%%\n", 
+			(double)ovp_frames_processed / ovp_frames_received * 100.0);
     }
     printf("======================\n");
 }
 
+// OVP Periodic Statistics Reporter thread
+// Wakes up at intervals of about 10 seconds and print a report.
+void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg) {
+	while (!stop) {
+		pthread_mutex_lock(&timeline_lock);
+		print_ovp_statistics();
+		pthread_mutex_unlock(&timeline_lock);
+		usleep(10e6);
+	}
+
+	printf("OVP: Periodic reporter thread exiting\n");
+	return NULL;
+}
+
+int start_periodic_statistics_reporter(void) {
+    if (pthread_create(&ovp_reporter_thread, NULL, ovp_periodic_statistics_reporter_thread, NULL) != 0) {
+        perror("OVP: Failed to create periodic statistics reporter thread");
+        return -1;
+    }
+    
+    printf("OVP: Reporter started successfully\n");
+    return 0;
+}
+
+void stop_periodic_statistics_reporter(void) {
+    if (ovp_reporter_thread) {
+        pthread_join(ovp_reporter_thread, NULL);
+    }
+        
+    printf("OVP: Reporter stopped\n");
+}
+
 #endif // OVP_FRAME_MODE
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1178,13 +1264,13 @@ int main (int argc, char **argv)
 	rxcfg.bw_hz = RF_BANDWIDTH;
 	rxcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s rx sample rate
 	rxcfg.lo_hz = LO_FREQ;
-	rxcfg.rfport = "A_BALANCED"; // port A (select for rf freq.)
+	rxcfg.rf_port = "A_BALANCED"; // port A (select for rf freq.)
 
 	// OPV hardware TX stream config
 	txcfg.bw_hz = RF_BANDWIDTH;
 	txcfg.fs_hz = MHZ(61.44);   // 2.5 MS/s tx sample rate
 	txcfg.lo_hz = LO_FREQ;
-	txcfg.rfport = "A"; // port A (select for rf freq.)
+	txcfg.rf_port = "A"; // port A (select for rf freq.)
 
 	printf("* Acquiring IIO context\n");
 	if (argc == 1) {
@@ -1268,7 +1354,7 @@ int main (int argc, char **argv)
 
 	printf("RDL Memory map the address of the MSK block via its AXI lite control interface.\n");
 //	msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
-        msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+	msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 
 //	printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
 //	unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
@@ -1321,7 +1407,7 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Control, 0x00000000);  // All control bits off
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	#endif
+	#endif //OVP_FRAME_MODE
 
 	//Receiver Active
 	#ifdef RX_ACTIVE
@@ -1336,19 +1422,19 @@ int main (int argc, char **argv)
 	//digital loopback
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("RX_ACTIVE off: Writing MSK_CONTROL register for digital loopback.\n");
-    printf("PTT and loopback enabled.\n");
+	printf("PTT and loopback enabled.\n");
 	WRITE_MSK(MSK_Control, 0x00000003);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 	#elif !defined(OVP_FRAME_MODE) && defined(RF_LOOPBACK)
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-        printf("RF_LOOPBACK on: Writing MSK_CONTROL register for RF loopback.\n");
-        printf("PTT enabled and loopback disabled.\n");
-        WRITE_MSK(MSK_Control, 0x00000001);
-        printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	#endif 
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("RF_LOOPBACK on: Writing MSK_CONTROL register for RF loopback.\n");
+	printf("PTT enabled and loopback disabled.\n");
+	WRITE_MSK(MSK_Control, 0x00000001);
+	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	#endif // not OVP_FRAME_MODE and not RF_LOOPBACK
 
 	printf("Reading the MSK_STATUS register, we see: (0x%08x@%04x)\n", READ_MSK(MSK_Status), OFFSET_MSK(MSK_Status));
 	printf("Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable\n");
@@ -1473,14 +1559,14 @@ int main (int argc, char **argv)
 	printf("can be calculated as the ratio of received bits to errored-bits.\n");
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
-	printf("PI conotroller accumulator value.\n");
+	printf("PI controller accumulator value.\n");
 	printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
-	printf("PI conotroller accumulator value.\n");
+	printf("PI controller accumulator value.\n");
 
 
-        printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
-        WRITE_MSK(PRBS_Control, 0x00000000);
-        printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
+    printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
+    WRITE_MSK(PRBS_Control, 0x00000000);
+    printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
 #if !defined(OVP_FRAME_MODE) && !defined(STREAMING_MODE)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS for modes that use it.\n");
@@ -1506,12 +1592,7 @@ int main (int argc, char **argv)
 //	write_dma(msk_virtual_addr, 0x4c, 0x00000001);
 	WRITE_MSK(PRBS_Error_Mask, 0x00000001);
         printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
-#endif
-
-
-
-
-
+#endif // not OVP_FRAME_MODE and not STREAMING_MODE
 
 
 	//initial values of parameterized LPF_CONFIG are set up here
@@ -1524,7 +1605,7 @@ int main (int argc, char **argv)
 
 	int32_t proportional_gain =           0x007FFFFF; //0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
 	int32_t integral_gain =          	  0x007FFFFF; //     0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
-        int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
+	int32_t proportional_gain_bit_shift = 18; //0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
 	int32_t integral_gain_bit_shift =     27; //0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
 
 #ifndef OVP_FRAME_MODE
@@ -1533,14 +1614,14 @@ int main (int argc, char **argv)
 	int32_t integral_gain_increment = 0;
 	int32_t proportional_shift_increment = 0;
 	int32_t integral_shift_increment = 0;
-#endif
+#endif // not OVP_FRAME_MODE
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Write proportional and integral gains to LPF_CONFIG_2 and LPF_CONFIG_1.\n");
 	printf("Proportional config: (0x%08x) integral config: (0x%08x)\n", proportional_config, integral_config);
-        WRITE_MSK(LPF_Config_1, integral_config);
+	WRITE_MSK(LPF_Config_1, integral_config);
 	WRITE_MSK(LPF_Config_2, proportional_config);
 
 	//test xfer register reads
@@ -1553,7 +1634,7 @@ int main (int argc, char **argv)
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
 
-        printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read NCO Telemetry:\n");
 	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
 	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
@@ -1802,7 +1883,7 @@ int main (int argc, char **argv)
 
 			break;
 		}
-#endif
+#endif // NO_INIT_ON_SUCCESS
 	} //end of while percent_error < 49.0
 
 
@@ -1880,18 +1961,25 @@ int main (int argc, char **argv)
 	#ifdef ENDLESS_PRBS
 	}
 	#endif //ENDLESS_PRBS
-#endif // end if not OVP_FRAME_MODE section
-
-
-
-
-
+#endif // not OVP_FRAME_MODE and not STREAMING_MODE
 
 
 
 #ifdef OVP_FRAME_MODE
     printf("OVP Frame Mode Enabled\n");
-    
+
+	// Start OVP Timeline Manager
+	if (start_timeline_manager() < 0) {
+		printf("Failed to start OVP timeline manager\n");
+		return -1;
+	}
+
+	// Start periodic statistics reporter
+	if (start_periodic_statistics_reporter() < 0) {
+		printf("Failed to start periodic statistics reporter\n");
+		return -1;
+	}
+
     // Start OVP UDP listener
     if (start_ovp_listener() < 0) {
         printf("Failed to start OVP listener\n");
@@ -1901,41 +1989,14 @@ int main (int argc, char **argv)
         printf("Ready to receive frames from Interlocutor\n");
         printf("Press Ctrl+C to stop\n");
     }
-#endif
 
 
-
-
-
-
-
-#ifdef OVP_FRAME_MODE
     // Main loop for OVP mode - keep program running
     while (!stop) {
-        // Check hang timer and send dummy frames if needed
-        check_hang_timer();
-
-        // Print OVP statistics periodically
-        static int ovp_stats_counter = 0;
-        if (++ovp_stats_counter >= 10000) {  // Every 10000 iterations
-            print_ovp_statistics();
-            ovp_stats_counter = 0;
-        }
-        
-        // Small delay to prevent busy waiting
-        usleep(1000);  // 1ms sleep
+        usleep(1e6);  // one second sleep
     }
-    printf("OVP: Exiting main loop, stop=%d\n", stop);  // ADD THIS for DEBUG
-    //printf("OVP: Exiting main loop\n");
-#endif
-
-
-
-
-
-
-
-
+    printf("OVP: Exiting main loop\n");
+#endif // OVP_FRAME_MODE
 
 
 
@@ -2014,8 +2075,9 @@ int main (int argc, char **argv)
 		printf("\tRX %8.2f MSmp, TX %8.2f MSmp\n", nrx/1e6, ntx/1e6);
 	}
 
+#endif // STREAMING
 
-#endif
+
 
 	cleanup_and_exit();
 
