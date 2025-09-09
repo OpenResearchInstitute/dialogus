@@ -328,7 +328,6 @@ static bool stop;
 static void cleanup_and_exit(void)
 {
 	#ifdef OVP_FRAME_MODE
-	    printf("Stopping threads...\n");
 	    // End any active transmission session
 	    if (ovp_transmission_active) {
 	        abort_transmission_session();
@@ -1004,11 +1003,11 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
     ssize_t bytes_received;
 	uint32_t recv_ts;
 	uint32_t last_recv_ts = 0;
-        
-    while (ovp_running) {
-		pthread_mutex_lock(&timeline_lock);
 
-        client_len = sizeof(client_addr);
+	client_len = sizeof(client_addr);
+
+    while (ovp_running) {
+
         bytes_received = recvfrom(
             ovp_udp_socket,
             ovp_frame_buffer,
@@ -1017,6 +1016,12 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
             (struct sockaddr*)&client_addr,
             &client_len
         );
+
+		// might be shutting down now, don't grab the mutex
+		if (!ovp_running) {
+			break;
+		}
+		pthread_mutex_lock(&timeline_lock);
         
         if (bytes_received == OVP_SINGLE_FRAME_SIZE) {
             //printf("OVP: Received %zd bytes from %s:%d\n", 
@@ -1085,7 +1090,7 @@ void stop_ovp_listener(void) {
         }
         
         if (ovp_udp_thread) {
-            pthread_join(ovp_udp_thread, NULL);
+            pthread_cancel(ovp_udp_thread);
         }
         
         printf("OVP: UDP listener stopped\n");
@@ -1170,9 +1175,9 @@ int start_timeline_manager(void) {
 
 void stop_timeline_manager(void) {
     if (ovp_timeline_thread) {
-        pthread_join(ovp_timeline_thread, NULL);
+        pthread_cancel(ovp_timeline_thread);
     }
-        
+
     printf("OVP: Timeline manager stopped\n");
 }
 
@@ -1228,7 +1233,7 @@ int start_periodic_statistics_reporter(void) {
 
 void stop_periodic_statistics_reporter(void) {
     if (ovp_reporter_thread) {
-        pthread_join(ovp_reporter_thread, NULL);
+        pthread_cancel(ovp_reporter_thread);
     }
         
     printf("OVP: Reporter stopped\n");
@@ -1995,7 +2000,6 @@ int main (int argc, char **argv)
     while (!stop) {
         usleep(1e6);  // one second sleep
     }
-    printf("OVP: Exiting main loop\n");
 #endif // OVP_FRAME_MODE
 
 
