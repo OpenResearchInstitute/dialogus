@@ -287,11 +287,11 @@ uint32_t get_timestamp_ms(void) {
 	return (uint32_t)ts_ms;
 }
 
-uint32_t get_timestamp_us(void) {
+uint64_t get_timestamp_us(void) {
 	uint64_t ts = get_timestamp();
 	double ts_seconds = ts / (double)COUNTS_PER_SECOND;
-	double ts_ms = ts_seconds * 1000000.0;
-	return (uint32_t)ts_ms;
+	double ts_us = ts_seconds * 1000000.0;
+	return (uint64_t)ts_us;
 }
 
 void print_timestamp(void) {
@@ -337,6 +337,7 @@ static void cleanup_and_exit(void)
 		stop_timeline_manager();
 		stop_periodic_statistics_reporter();
 
+		printf("\nFinal statistics report:\n");
 		print_ovp_statistics();	// make sure one last report goes out, even if it's a duplicate
 
 	#endif // OVP_FRAME_MODE
@@ -646,9 +647,6 @@ int start_transmission_session(void) {
 	session_T0 = get_timestamp_us();	// used for timeline management
 	decision_time = session_T0 + 60e3;	// 60ms to the middle of the next frame, T0-referenced
 
-	// Inform the timeline manager to start managing the session
-	pthread_cond_signal(&timeline_start);
-
     // Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
     uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];  // Full 40ms of data
     
@@ -658,14 +656,22 @@ int start_transmission_session(void) {
     }
     
     // Send preamble to MSK modulator (pure bit pattern, no framing)
-    //printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
+    printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
 	load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
+	printf("preamble loaded!\n");
 	enable_msk_transmission();
+	printf("transmission enabled!\n");
 	push_txbuf_to_msk();
+	printf("preamble pushed!\n");
 
     ovp_transmission_active = 1;
     ovp_sessions_started++;
 
+	// Inform the timeline manager to start managing the session
+	pthread_cond_signal(&timeline_start);
+
+	printf("T0 = %lld\n", session_T0);
+    printf("Td = %lld\n", decision_time);
     return 0;
 }
 
@@ -1109,10 +1115,12 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 	uint32_t local_ts_base;
 
 	while (!stop) {
-		if (ovp_transmission_active) {
+		while (ovp_transmission_active) {
+			printf("timeline grabbing mutex\n");
 			pthread_mutex_lock(&timeline_lock);
 			if (decision_time != 0) {
 				now = get_timestamp_us();
+				printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
 					if (ovp_txbufs_this_frame > 0) {
 						if (ovp_txbufs_this_frame > 1) {
@@ -1147,16 +1155,17 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 				}
 			}
 			pthread_mutex_unlock(&timeline_lock);
+			printf("timeline released mutex\n");
 
 			now = get_timestamp_us();
 			if (decision_time - now > 0) {
 				usleep(decision_time - now);	// wait until next decision time
 			}
 
-		} else {
-			printf("OVP: Timeline paused until next transmission\n");
-			pthread_cond_wait(&timeline_start, &tls_lock);
 		}
+		
+		printf("OVP: Timeline paused until next transmission\n");
+		pthread_cond_wait(&timeline_start, &tls_lock);
 	}
 
 	printf("OVP: Timeline manager thread exiting\n");
@@ -1214,9 +1223,14 @@ void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg)
 		pthread_mutex_lock(&timeline_lock);
 		print_ovp_statistics();
 		pthread_mutex_unlock(&timeline_lock);
-		usleep(10e6);
+		// don't sleep all at once; makes exiting the program too slow.
+		for (int i=0; i < 100; i++) {
+			usleep(100e3);	// 100 iterations of 100ms = 10 seconds
+			if (stop) {
+				break;
+			}
+		}
 	}
-
 	printf("OVP: Periodic reporter thread exiting\n");
 	return NULL;
 }
