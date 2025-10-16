@@ -58,7 +58,6 @@
 // Sizes for encapsulated Opulent Voice frames
 #define OVP_SINGLE_FRAME_SIZE   134     // Opulent Voice Protocol Packet Size
 
-#ifdef OVP_FRAME_MODE
 // Opulent Voice Protocol constants
 #define OVP_MAGIC_BYTES 0xBBAADD
 #define OVP_HEADER_SIZE 12
@@ -70,17 +69,25 @@
 #define OVP_SYNC_WORD_SIZE 3       // Size of sync word prepended to each frame
 #define OVP_ENCODED_HEADER_SIZE (OVP_HEADER_SIZE * 2)	// Header expands by 2x due to FEC coding
 #define OVP_ENCODED_PAYLOAD_SIZE (OVP_PAYLOAD_SIZE * 2)	// Payload expands by 2x due to FEC coding
-// Data expands by 2x due to FEC coding, and a sync word is prepended
+// Data expands by 2x due to FEC coding, and a sync word may be prepended
+#ifdef PREPEND_SYNC_WORD
 #define OVP_MODULATOR_FRAME_SIZE (OVP_SYNC_WORD_SIZE + OVP_ENCODED_HEADER_SIZE + OVP_ENCODED_PAYLOAD_SIZE)
 #define OVP_MODULATOR_PAYLOAD_OFFSET (OVP_SYNC_WORD_SIZE + OVP_ENCODED_HEADER_SIZE)
+#else
+#define OVP_MODULATOR_FRAME_SIZE (OVP_ENCODED_HEADER_SIZE + OVP_ENCODED_PAYLOAD_SIZE)
+#define OVP_MODULATOR_PAYLOAD_OFFSET (OVP_ENCODED_HEADER_SIZE)
+#endif // PREPEND_SYNC_WORD
 
+#ifdef OVP_FRAME_MODE
+
+#ifdef PREPEND_SYNC_WORD
 // Our 24-bit sync word is a concatenation of the 11-bit Barker sequence and the 13-bit Barker sequence
 // 11-bit Barker: 11100010010
 // 13-bit Barker: 1111100110101
 // Combined:     1110 0010 0101 1111 0011 0101
 // in hex: 0xE25F35
 const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
-
+#endif // PREPEND_SYNC_WORD
 
 // OVP Pipeline Configuration (if using FPGA pipeline)
 #define OVP_CFG_PREAMBLE_EN     (1 << 3)
@@ -562,7 +569,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 			// If TX_DATA_WIDTH is 16, use the full I channel.
 			// If TX_DATA_WIDTH is 24, use the full I channel and the low byte of the Q channel.
 			// If TX_DATA_WIDTH is 32, use the full I and Q channels.
-			// Since we are sending an odd number of bytes (271) we must use TX_DATA_WIDTH of 8.
+			// Since we may be sending an odd number of bytes (271 with the sync word) we must use TX_DATA_WIDTH of 8.
             ((int16_t*)p_dat)[0] = (int16_t)(data_byte);	// Real (I) - lower byte
             ((int16_t*)p_dat)[1] = (int16_t)(0);			// Imag (Q)
 
@@ -867,8 +874,8 @@ void encode_ovp_header(uint8_t *input, uint8_t *output) {
 
 // FEC-encode OVP payload
 void encode_ovp_payload(uint8_t *input, uint8_t *output) {
-	memcpy(output, input, OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE);
-	memcpy(output + (OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE), input, OVP_SINGLE_FRAME_SIZE - OVP_HEADER_SIZE);  // Simple repetition placeholder
+	memcpy(output, input, OVP_PAYLOAD_SIZE);
+	memcpy(output + OVP_PAYLOAD_SIZE, input, OVP_PAYLOAD_SIZE);  // Simple repetition placeholder
 }
 
 
@@ -1405,37 +1412,18 @@ int main (int argc, char **argv)
 
 */
 
-	printf("* Creating non-cyclic IIO buffers\n");
-	// original size of the rxbuf
-	//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
-	// size of our rxbuf
-    //rxbuf = iio_device_create_buffer(rx, 64, false); //!!! what size?
-    //rxbuf = iio_device_create_buffer(rx, OVP_SINGLE_FRAME_SIZE, false); //!!! what size?
-    rxbuf = iio_device_create_buffer(rx, 2 * OVP_SINGLE_FRAME_SIZE, false); //!!! what size? here doubled to account for missing FEC
-    //rxbuf = iio_device_create_buffer(rx, 3 + 2 * OVP_SINGLE_FRAME_SIZE, false); //!!! what size? here doubled to account for missing FEC, + 3 frame sync word
+	printf("* Creating non-cyclic IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
+    rxbuf = iio_device_create_buffer(rx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit();
 	}
-	printf("step size in rxbuf = %d\n", iio_buffer_step(rxbuf));
 
-	// original size of the txbuf
-	//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
-	// size of our txbuf
-#if defined(STREAMING)
-	// txbuf = iio_device_create_buffer(tx, OVP_SINGLE_FRAME_SIZE, false);
-    txbuf = iio_device_create_buffer(tx, 2 * OVP_SINGLE_FRAME_SIZE, false);	//!!! what size? here doubled to account for missing FEC
-    // txbuf = iio_device_create_buffer(tx, 3 + 2 * OVP_SINGLE_FRAME_SIZE, false);	//!!! what size? here doubled to account for missing FEC, + 3 frame sync word
-#elif defined(OVP_FRAME_MODE)
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
-#else
-#error "Neither STREAMING nor OVP_FRAME_MODE is defined. txbuf size unknown."
-#endif
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit();
 	}
-	printf("step size in txbuf = %d\n", iio_buffer_step(txbuf));
 
 	printf("Hello World!\n");
 	printf("Opening character device files in DDR memory.\n");
