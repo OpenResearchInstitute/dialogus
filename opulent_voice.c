@@ -1256,6 +1256,56 @@ void stop_periodic_statistics_reporter(void) {
 #endif // OVP_FRAME_MODE
 
 
+// ------------ Fake Stream Transmission ----------------
+
+#define TXSTREAM_SIZE	1024
+uint8_t txstream[TXSTREAM_SIZE];
+size_t txstream_index;
+
+void txstream_init(void)
+{
+	// Create the data we want to transmit repeatedly
+	for (size_t i = 0; i < TXSTREAM_SIZE; i++) {
+		//txstream[i] = i % 256;
+		txstream[i] = i % 16;
+		//txstream[i] = rand() % 256;
+	}
+
+	for (size_t i=0; i < TXSTREAM_SIZE/2; i++) {
+		txstream[i] = 0xaa;
+	}
+
+	txstream_index = 0;
+}
+
+uint8_t txstream_next_byte(void)
+{		
+	uint8_t next_byte = txstream[txstream_index++];
+
+	if (txstream_index >= TXSTREAM_SIZE) {
+		txstream_index = 0;
+	}
+
+	return next_byte;
+}
+
+// ------------ Debug: dump IIO buffer ----------------
+
+void dump_buffer(char *buffer_name, struct iio_buffer *buf)
+{
+	uint8_t *p_dat;
+	uint8_t *p_end;
+
+	printf("Dump of %s:\n", buffer_name);
+
+	p_end = iio_buffer_end(rxbuf);
+	for (p_dat = (uint8_t *)iio_buffer_first(buf, tx0_i); p_dat < p_end; p_dat++) {
+		printf("%02x ", *p_dat);
+	}
+	printf("\n");
+
+}
+
 
 // -=-=-=-=-=-=-=-=-=-= MAIN FUNCTION =-=-=-=-=-=-=-=-=-=-=-
 
@@ -1326,9 +1376,18 @@ int main (int argc, char **argv)
 	if (ret < 0) {
 		char buf_test[256];
 		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
-		printf("* set_kernel_buffers failed : %s\n", buf_test);
+		printf("* set_kernel_buffers (tx) failed : %s\n", buf_test);
 	} else {
-		printf("* set_kernel_buffers returned %d, which is a success.\n", ret);
+		printf("* set_kernel_buffers (tx) returned %d, which is a success.\n", ret);
+	}
+
+	ret = iio_device_set_kernel_buffers_count(rx, 4);
+	if (ret < 0) {
+		char buf_test[256];
+		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
+		printf("* set_kernel_buffers (rx) failed : %s\n", buf_test);
+	} else {
+		printf("* set_kernel_buffers (rx) returned %d, which is a success.\n", ret);
 	}
 
 /*
@@ -1350,20 +1409,33 @@ int main (int argc, char **argv)
 	// original size of the rxbuf
 	//	rxbuf = iio_device_create_buffer(rx, 1024*1024, false);
 	// size of our rxbuf
-    rxbuf = iio_device_create_buffer(rx, OVP_SINGLE_FRAME_SIZE, false); //!!! what size?
+    //rxbuf = iio_device_create_buffer(rx, 64, false); //!!! what size?
+    //rxbuf = iio_device_create_buffer(rx, OVP_SINGLE_FRAME_SIZE, false); //!!! what size?
+    rxbuf = iio_device_create_buffer(rx, 2 * OVP_SINGLE_FRAME_SIZE, false); //!!! what size? here doubled to account for missing FEC
+    //rxbuf = iio_device_create_buffer(rx, 3 + 2 * OVP_SINGLE_FRAME_SIZE, false); //!!! what size? here doubled to account for missing FEC, + 3 frame sync word
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit();
 	}
+	printf("step size in rxbuf = %d\n", iio_buffer_step(rxbuf));
 
 	// original size of the txbuf
 	//	txbuf = iio_device_create_buffer(tx, 1024*1024, false);
 	// size of our txbuf
-    txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
+#if defined(STREAMING)
+	// txbuf = iio_device_create_buffer(tx, OVP_SINGLE_FRAME_SIZE, false);
+    txbuf = iio_device_create_buffer(tx, 2 * OVP_SINGLE_FRAME_SIZE, false);	//!!! what size? here doubled to account for missing FEC
+    // txbuf = iio_device_create_buffer(tx, 3 + 2 * OVP_SINGLE_FRAME_SIZE, false);	//!!! what size? here doubled to account for missing FEC, + 3 frame sync word
+#elif defined(OVP_FRAME_MODE)
+	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
+#else
+#error "Neither STREAMING nor OVP_FRAME_MODE is defined. txbuf size unknown."
+#endif
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit();
 	}
+	printf("step size in txbuf = %d\n", iio_buffer_step(txbuf));
 
 	printf("Hello World!\n");
 	printf("Opening character device files in DDR memory.\n");
@@ -1540,7 +1612,6 @@ int main (int argc, char **argv)
 	printf("Read TX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
 
-	// We must use a TX data width of 8, because we are sending an odd number of bytes (271)
 	printf("Set TX_DATA_WIDTH to 8.\n");
 	WRITE_MSK(Tx_Data_Width, 0x00000008);
 
@@ -1550,7 +1621,7 @@ int main (int argc, char **argv)
 	printf("Read RX_DATA_WIDTH, which is the modem transmit input/output data width.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
 	printf("Set RX_DATA_WIDTH to 32.\n");
-	WRITE_MSK(Rx_Data_Width, 0x00000020);
+	WRITE_MSK(Rx_Data_Width, 0x00000008);
 	printf("Read RX_DATA_WIDTH.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
 
@@ -1586,7 +1657,7 @@ int main (int argc, char **argv)
     printf("Initialize PRBS_CONTROL to zero. PRBS inactive (bit 0)\n");
     WRITE_MSK(PRBS_Control, 0x00000000);
     printf("We read PRBS_CONTROL: (0x%08x@%04x)\n", READ_MSK(PRBS_Control), OFFSET_MSK(PRBS_Control)); 
-#if !defined(OVP_FRAME_MODE) && !defined(STREAMING_MODE)
+#if !defined(OVP_FRAME_MODE) && !defined(STREAMING)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Attempt to set up PRBS for modes that use it.\n");
 
@@ -1629,10 +1700,10 @@ int main (int argc, char **argv)
 
 #ifndef OVP_FRAME_MODE
 	// If we are searching for good gains, use these increments. Negative for decrement. Zero for constant gain.
-	int32_t proportional_gain_increment = 0; //- 0x00001000;
-	int32_t integral_gain_increment = 0;
-	int32_t proportional_shift_increment = 0;
-	int32_t integral_shift_increment = 0;
+	int32_t proportional_gain_increment __attribute__((unused)) = 0; //- 0x00001000;
+	int32_t integral_gain_increment __attribute__((unused)) = 0;
+	int32_t proportional_shift_increment __attribute__((unused)) = 0;
+	int32_t integral_shift_increment __attribute__((unused))= 0;
 #endif // not OVP_FRAME_MODE
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
@@ -1665,7 +1736,7 @@ int main (int argc, char **argv)
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 
-#if !defined(OVP_FRAME_MODE) && !defined(STREAMING_MODE)
+#if !defined(OVP_FRAME_MODE) && !defined(STREAMING)
 	//loop variables
 	int max_without_zeros = 0;
 	int spectacular_success = 0;
@@ -2023,10 +2094,13 @@ int main (int argc, char **argv)
 	// RX and TX sample counters
 	size_t nrx = 0;
 	size_t ntx = 0;
-    uint32_t old_data = 0, new_data = 0;
+    uint32_t old_data __attribute__((unused)) = 0, new_data __attribute__((unused)) = 0;
 	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
+	uint32_t refill_ts_base;
 
+	printf("* Initializing fake transmit stream\n");
+	txstream_init();
 
 	printf("* Starting IO streaming (press CTRL+C to cancel)\n");
 	while (!stop)
@@ -2035,31 +2109,43 @@ int main (int argc, char **argv)
 		char *p_dat, *p_end;
 		ptrdiff_t p_inc;
 
+		//dump_buffer("txbuf", txbuf);
+
+		local_ts_base = get_timestamp_ms();
+		printf("OVP: time between stream IIO starts was %dms\n", local_ts_base - push_ts_base);
+		push_ts_base = local_ts_base;
+
+#if !defined(RX_ACTIVE)
 		// Schedule TX buffer
 		// nbytes_tx = iio_buffer_push(txbuf);
 
-		local_ts_base = get_timestamp_ms();
-		printf("OVP: time between stream iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
-		push_ts_base = local_ts_base;
     	nbytes_tx = iio_buffer_push(txbuf);
-		printf("OVP: streaming iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+		printf("OVP: streaming iio_buffer_push of %d bytes took %dms.\n", nbytes_tx, get_timestamp_ms()-local_ts_base);
 
 
 		// Use AXI stream transfer count register to see if data is getting to our logic
+//!!!
 		old_data = new_data;
 		new_data = msk_register_map->axis_xfer_count;
-//		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
-//		printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
+		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
+		printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
+		printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  READ_MSK(Tx_Bit_Count), OFFSET_MSK(Tx_Bit_Count));
 
 
 		if (nbytes_tx < 0) {
 			printf("Error pushing buf %d\n", (int) nbytes_tx); cleanup_and_exit();
 		}
+#else
+		nbytes_tx = 0;
+#endif //not RX_ACTIVE
 
 		// Refill RX buffer
+		refill_ts_base = get_timestamp_ms();
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) {
 			printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+		} else {
+			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
 		}
 
 		// READ: Get pointers to RX buf and read IQ from RX buf port 0
@@ -2067,10 +2153,10 @@ int main (int argc, char **argv)
 		p_end = iio_buffer_end(rxbuf);
 		for (p_dat = (char *)iio_buffer_first(rxbuf, rx0_i); p_dat < p_end; p_dat += p_inc) {
 			// Example: swap I and Q
-			const int16_t i = ((int16_t*)p_dat)[0]; // Real (I)
-			const int16_t q = ((int16_t*)p_dat)[1]; // Imag (Q)
-			((int16_t*)p_dat)[0] = q;
-			((int16_t*)p_dat)[1] = i;
+			//const int16_t i = ((int16_t*)p_dat)[0]; // Real (I)
+			//const int16_t q = ((int16_t*)p_dat)[1]; // Imag (Q)
+			// ((int16_t*)p_dat)[0] = q;	// dumb example transformation
+			// ((int16_t*)p_dat)[1] = i;
 		}
 
 		// WRITE: Get pointers to TX buf and write IQ to TX buf port 0
@@ -2083,19 +2169,31 @@ int main (int argc, char **argv)
 			//((int16_t*)p_dat)[0] = 0x0800 << 4; // Real (I)
 			//((int16_t*)p_dat)[1] = 0x0800 << 4; // Imag (Q)
 
-			((int16_t*)p_dat)[0] = 0xAAAA; // Real (I)
-			((int16_t*)p_dat)[1] = 0xAAAA; // Imag (Q)
+			//((int16_t*)p_dat)[0] = 0x00a5; // Real (I)
+			//((int16_t*)p_dat)[1] = 0x0000; // Imag (Q)
+
+			((int16_t*)p_dat)[0] = txstream_next_byte();
+			((int16_t*)p_dat)[1] = 0;
 		}
 
 		// Sample counter increment and status output
 		nrx += nbytes_rx / iio_device_get_sample_size(rx);
 		ntx += nbytes_tx / iio_device_get_sample_size(tx);
 		printf("\tRX %8.2f MSmp, TX %8.2f MSmp\n", nrx/1e6, ntx/1e6);
+
+		//dump_buffer("rxbuf", rxbuf);
+		
+		// dump received buffer for visual check
+		printf("Received: ");
+		p_inc = iio_buffer_step(rxbuf);
+		p_end = iio_buffer_end(rxbuf);
+		for (p_dat = (char *)iio_buffer_first(rxbuf, rx0_i); p_dat < p_end; p_dat += p_inc) {
+			printf("%02x ", ((int16_t*)p_dat)[0] & 0x00ff);
+		}
+		printf("\n");
+
 	}
-
 #endif // STREAMING
-
-
 
 	cleanup_and_exit();
 
