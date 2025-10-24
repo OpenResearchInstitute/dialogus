@@ -15,13 +15,13 @@
 #include <signal.h>
 #include <stdio.h>
 #include <iio.h>
+#include <errno.h>
 
 #ifdef OVP_FRAME_MODE
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
-#include <errno.h>
 #endif // OVP_FRAME_MODE
 
 /* for pow() */
@@ -1265,12 +1265,39 @@ void stop_periodic_statistics_reporter(void) {
 
 // ------------ Fake Stream Transmission ----------------
 
-#define TXSTREAM_SIZE	1024
+#define TXSTREAM_DATAFRAMES	7	// Number of distinct frames in the rotation
+#define TXSTREAM_SIZE	(OVP_SINGLE_FRAME_SIZE * 2 * TXSTREAM_DATAFRAMES)
+#define TXSTREAM_HEADERSIZE	32	// start with 32 bytes of a simple pattern
+
+// these patterns are designed to be unambiguous even when bit-shifted,
+// Just count the number of 1's in eight bits.
+uint8_t txstream_header_pattern[TXSTREAM_DATAFRAMES] = { 0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f };
+
 uint8_t txstream[TXSTREAM_SIZE];
 size_t txstream_index;
 
 void txstream_init(void)
 {
+	size_t index = 0;
+	int i;
+
+	// fill each data frame
+	for (int frame = 0; frame < TXSTREAM_DATAFRAMES; frame++) {
+		// repeat the identifier pattern to make a visually distinct header
+		for (i = 0; i < TXSTREAM_HEADERSIZE; i++) {
+			txstream[index++] = txstream_header_pattern[frame];
+		}
+
+		// fill in a systematic pattern for the remaining bytes
+		for ( ; i < OVP_SINGLE_FRAME_SIZE*2; i++) {
+			txstream[index++] = (frame & 0x01) ? 0x55 : 0xaa;
+		}
+
+	}
+
+/* old pattern
+
+
 	// Create the data we want to transmit repeatedly
 	for (size_t i = 0; i < TXSTREAM_SIZE; i++) {
 		//txstream[i] = i % 256;
@@ -1281,6 +1308,9 @@ void txstream_init(void)
 	for (size_t i=0; i < TXSTREAM_SIZE/2; i++) {
 		txstream[i] = 0xaa;
 	}
+*/
+
+
 
 	txstream_index = 0;
 }
@@ -1398,9 +1428,9 @@ int main (int argc, char **argv)
 	}
 
 /*
-	// set the timeout higher to see if we can get a RX buffer refill without errors
+	// set the timeout very long to see if we can get a RX buffer refill without errors
 	// argument is the iio context and the number of milliseconds
-	ret = iio_context_set_timeout(ctx, 990);
+	ret = iio_context_set_timeout(ctx, 10000);
         if (ret < 0) {
                 char timeout_test[256];
                 iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
@@ -1409,7 +1439,6 @@ int main (int argc, char **argv)
         else {
                 printf("* set_timeout returned %d, which is a success.\n", ret);
         }
-
 */
 
 	printf("* Creating non-cyclic IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
@@ -2086,6 +2115,7 @@ int main (int argc, char **argv)
 	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
 	uint32_t refill_ts_base;
+	uint32_t extra_delay;
 
 	printf("* Initializing fake transmit stream\n");
 	txstream_init();
@@ -2127,11 +2157,18 @@ int main (int argc, char **argv)
 		nbytes_tx = 0;
 #endif //not RX_ACTIVE
 
+// disable rx: #if 0
+#ifdef RX_ACTIVE
 		// Refill RX buffer
 		refill_ts_base = get_timestamp_ms();
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) {
-			printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+				if (nbytes_rx == -ETIMEDOUT) {
+					printf("Refill timeout (no sync word yet?)\n");
+					nbytes_rx = 0;
+				} else {
+					printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+				}
 		} else {
 			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
 		}
@@ -2146,8 +2183,14 @@ int main (int argc, char **argv)
 			// ((int16_t*)p_dat)[0] = q;	// dumb example transformation
 			// ((int16_t*)p_dat)[1] = i;
 		}
+// disable rx: #endif // 0
+#else
+		nbytes_rx = 0;
+#endif // RX_ACTIVE
 
 		// WRITE: Get pointers to TX buf and write IQ to TX buf port 0
+		uint8_t value;
+		printf("Filling txbuf: ");
 		p_inc = iio_buffer_step(txbuf);
 		p_end = iio_buffer_end(txbuf);
 		for (p_dat = (char *)iio_buffer_first(txbuf, tx0_i); p_dat < p_end; p_dat += p_inc) {
@@ -2159,10 +2202,12 @@ int main (int argc, char **argv)
 
 			//((int16_t*)p_dat)[0] = 0x00a5; // Real (I)
 			//((int16_t*)p_dat)[1] = 0x0000; // Imag (Q)
-
-			((int16_t*)p_dat)[0] = txstream_next_byte();
+			value = txstream_next_byte();
+			printf("%02x ", value);
+			((int16_t*)p_dat)[0] = value;
 			((int16_t*)p_dat)[1] = 0;
 		}
+		printf("\n");
 
 		// Sample counter increment and status output
 		nrx += nbytes_rx / iio_device_get_sample_size(rx);
@@ -2170,16 +2215,32 @@ int main (int argc, char **argv)
 		printf("\tRX %8.2f MSmp, TX %8.2f MSmp\n", nrx/1e6, ntx/1e6);
 
 		//dump_buffer("rxbuf", rxbuf);
-		
-		// dump received buffer for visual check
-		printf("Received: ");
-		p_inc = iio_buffer_step(rxbuf);
-		p_end = iio_buffer_end(rxbuf);
-		for (p_dat = (char *)iio_buffer_first(rxbuf, rx0_i); p_dat < p_end; p_dat += p_inc) {
-			printf("%02x ", ((int16_t*)p_dat)[0] & 0x00ff);
-		}
-		printf("\n");
 
+		//!!! for a test, we will meter out the buffer pushes to ~40ms
+		/*
+		extra_delay = push_ts_base + 40 - get_timestamp_ms();
+		if (extra_delay > 0) {
+			printf("Adding %dms extra delay for pacing\n", extra_delay);
+			usleep(1000 * extra_delay);
+		} else {
+			printf("extra delay was %d, none added.\n", extra_delay);
+		}
+		*/
+		
+// disable rx: #if 0
+#ifdef RX_ACTIVE
+		if (nbytes_rx > 0) {
+			// dump received buffer for visual check
+			printf("Received: ");
+			p_inc = iio_buffer_step(rxbuf);
+			p_end = iio_buffer_end(rxbuf);
+			for (p_dat = (char *)iio_buffer_first(rxbuf, rx0_i); p_dat < p_end; p_dat += p_inc) {
+				printf("%02x ", ((int16_t*)p_dat)[0] & 0x00ff);
+			}
+			printf("\n");
+		}
+// disable rx: #endif // 0
+#endif // RX_ACTIVE
 	}
 #endif // STREAMING
 
