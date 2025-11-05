@@ -16,12 +16,12 @@
 #include <stdio.h>
 #include <iio.h>
 #include <errno.h>
+#include <pthread.h>
 
 #ifdef OVP_FRAME_MODE
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 #endif // OVP_FRAME_MODE
 
 /* for pow() */
@@ -161,8 +161,11 @@ float one_bit_time = 19;
 float percent_error = 55.0;
 int i; //index variable for loops
 
+pthread_t ovp_debug_thread;
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
+static pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
+
 #ifdef OVP_FRAME_MODE
 // OVP UDP Interface
 static int ovp_udp_socket = -1;
@@ -170,7 +173,6 @@ static volatile int ovp_transmission_active = 0;
 static struct sockaddr_in ovp_listen_addr;
 static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
-static pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
 
 // OVP periodic reporting
 static pthread_t ovp_reporter_thread;
@@ -227,6 +229,7 @@ void create_dummy_frame(void);
 void create_postamble_frame(void);
 #endif // OVP_FRAME_MODE
 
+void stop_debug_thread(void);
 
 /* Register addresses for using the hardware timer */
 #define PERIPH_BASE 0xf8f00000
@@ -245,6 +248,8 @@ unsigned int read_dma(unsigned int *virtual_addr, int offset)
         return virtual_addr[offset>>2];
 }
 
+static msk_top_regs_t *msk_register_map = NULL;
+
 //read a value from the MSK register
 //value = READ_MSK(MSK_Init);
 #define READ_MSK(offset) (msk_register_map->offset)
@@ -259,6 +264,29 @@ unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int valu
 //write a value to an MSK register
 //WRITE_MSK(MSK_Init, 0x00000001);
 #define WRITE_MSK(offset, value) *(volatile uint32_t*)&(msk_register_map->offset) = value
+
+// Some registers require synchronization across clock domains.
+// This is implemented by first writing (any value) and then reading the register.
+// The current value is captured, triggered by the write, and can then be read safely.
+// power = capture_and_read_msk(OFFSET_MSK(rx_power));
+uint32_t capture_and_read_msk(size_t offset) {
+	volatile uint32_t *reg_ptr;
+	uint32_t dummy_read;
+	
+	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
+
+	// write to capture
+	*reg_ptr = 0x0ABD0DEF;	// distinctive 12-bit values in case it shows up in a read
+
+	// Trusting that the CPU is slow enough to make this safe across clock domains
+	// without any artificial delay here. Or maybe we need a little delay:
+	//usleep(1);
+	// or try reading twice in case that helps:
+	dummy_read = *reg_ptr;
+
+	// read actual value
+	return *reg_ptr;
+}
 
 //get the address offset of an MSK register
 //value = OFFSET_MSK(MSK_Init);
@@ -327,7 +355,6 @@ static struct iio_channel *tx0_i = NULL;
 static struct iio_channel *tx0_q = NULL;
 static struct iio_buffer  *rxbuf = NULL;
 static struct iio_buffer  *txbuf = NULL;
-static msk_top_regs_t *msk_register_map = NULL;
 
 static bool stop;
 
@@ -349,6 +376,7 @@ static void cleanup_and_exit(void)
 
 	#endif // OVP_FRAME_MODE
 
+	stop_debug_thread();
 
 	printf("* Destroying buffers\n");
 	if (rxbuf) { iio_buffer_destroy(rxbuf); }
@@ -604,7 +632,7 @@ int push_txbuf_to_msk(void) {
     }
     
     // Check that data is flowing to MSK block
-    uint32_t new_xfer_count = READ_MSK(axis_xfer_count);
+    uint32_t new_xfer_count = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
     uint32_t delta = new_xfer_count - old_xfer_count;
     
     printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
@@ -1198,6 +1226,7 @@ void stop_timeline_manager(void) {
 }
 
 
+
 void print_ovp_statistics(void) {
     printf("\n=== OVP Statistics ===\n");
     printf("Frames received:     %llu\n", (unsigned long long)ovp_frames_received);
@@ -1262,6 +1291,98 @@ void stop_periodic_statistics_reporter(void) {
 
 #endif // OVP_FRAME_MODE
 
+#ifdef STREAM_RX_IN_THREAD
+// streaming rx
+static pthread_t streaming_rx_thread;
+
+// OVP Streaming Receive thread
+// Repeatedly try a buffer_refill on the receiver
+void* ovp_streaming_rx_thread(__attribute__((unused)) void *arg) {
+	int nbytes_rx = 0;
+	int32_t refill_ts_base;
+
+	while (!stop) {
+		refill_ts_base = get_timestamp_ms();
+		nbytes_rx = iio_buffer_refill(rxbuf);
+		if (nbytes_rx < 0) {
+				if (nbytes_rx == -ETIMEDOUT) {
+					printf("Refill timeout (no sync word yet?)\n");
+					nbytes_rx = 0;
+				} else {
+					printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+				}
+		} else {
+			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
+		}
+
+		usleep(50000);	// 50ms
+
+	}
+
+	printf("OVP: streaming rx thread exiting\n");
+	return NULL;
+}
+
+int start_streaming_rx(void) {
+    if (pthread_create(&streaming_rx_thread, NULL, ovp_streaming_rx_thread, NULL) != 0) {
+        perror("OVP: Failed to create streaming rx thread");
+        return -1;
+    }
+    
+    printf("OVP: streaming rx started successfully\n");
+    return 0;
+}
+
+void stop_streaming_rx(void) {
+    if (streaming_rx_thread) {
+        pthread_cancel(streaming_rx_thread);
+    }
+
+    printf("OVP: streaming rx stopped\n");
+}
+#endif // STREAM_RX_IN_THREAD
+
+// ---------- Debug Thread -----------------------------
+
+void* ovp_debug_threadf(__attribute__((unused)) void *arg) {
+	while (!stop) {
+		uint32_t now;
+
+		pthread_mutex_lock(&timeline_lock);
+			now = get_timestamp_ms();
+			printf("debugthread at %dms: tx fifo: 0x%08x rx fifo: 0x%08x rx power: 0x%08x\n", now,
+							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)), 
+							capture_and_read_msk(OFFSET_MSK(rx_power))
+						);
+			print_rssi();
+		pthread_mutex_unlock(&timeline_lock);
+
+		usleep(10000);
+	}
+	printf("debug thread exiting\n");
+	return NULL;
+}
+
+int start_debug_thread(void) {
+
+    if (pthread_create(&ovp_debug_thread, NULL, ovp_debug_threadf, NULL) != 0) {
+        perror("OVP: Failed to create debug thread");
+        return -1;
+    }
+    
+    printf("OVP: debug thread started successfully\n");
+    return 0;
+}
+
+void stop_debug_thread(void) {
+    if (ovp_debug_thread) {
+        pthread_cancel(ovp_debug_thread);
+    }
+        
+    printf("OVP: debug thread stopped\n");
+}
+
 
 // ------------ Fake Stream Transmission ----------------
 
@@ -1294,6 +1415,25 @@ void txstream_init(void)
 		}
 
 	}
+
+	/*
+	// stick in some things like sync words, just to see
+	txstream[16] = 0xe2;
+	txstream[17] = 0x5f;
+	txstream[18] = 0x35;
+
+	txstream[16+268] = 0x47;
+	txstream[17+268] = 0xfa;
+	txstream[18+268] = 0xac;
+
+	txstream[16+268*2] = 0xac;
+	txstream[17+268*2] = 0xfa;
+	txstream[18+268*2] = 0x47;
+
+	txstream[16+268*3] = 0x35;
+	txstream[17+268*3] = 0x5f;
+	txstream[18+268*3] = 0xe2;
+*/
 
 /* old pattern
 
@@ -1427,10 +1567,11 @@ int main (int argc, char **argv)
 		printf("* set_kernel_buffers (rx) returned %d, which is a success.\n", ret);
 	}
 
-/*
-	// set the timeout very long to see if we can get a RX buffer refill without errors
+
+	// set the timeout for refill and push etc.
+	// default value is 1000ms
 	// argument is the iio context and the number of milliseconds
-	ret = iio_context_set_timeout(ctx, 10000);
+	ret = iio_context_set_timeout(ctx, 1000);
         if (ret < 0) {
                 char timeout_test[256];
                 iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
@@ -1439,13 +1580,17 @@ int main (int argc, char **argv)
         else {
                 printf("* set_timeout returned %d, which is a success.\n", ret);
         }
-*/
+
 
 	printf("* Creating non-cyclic IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
     rxbuf = iio_device_create_buffer(rx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit();
+	}
+
+	if (iio_buffer_set_blocking_mode(rxbuf, false) < 0) {	//!!!set non-blocking
+		printf("Failed to make rxbuf non-blocking\n");
 	}
 
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
@@ -1548,11 +1693,11 @@ int main (int argc, char **argv)
 	printf("Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable\n");
 	printf("tx_enable is data to DAC enabled. rx_enable is data from ADC enable.\n");
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  READ_MSK(Tx_Bit_Count), OFFSET_MSK(Tx_Bit_Count));
+	printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  capture_and_read_msk(OFFSET_MSK(Tx_Bit_Count)), OFFSET_MSK(Tx_Bit_Count));
 	printf("This register reads out the count of data requests made by the modem.\n");
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("TX_ENABLE_COUNT register is read and write. It holds the number of clocks on which Tx Enable is active.\n");
-	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(Tx_Enable_Count), OFFSET_MSK(Tx_Enable_Count));
+	printf("First we read it, we see: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(Tx_Enable_Count)), OFFSET_MSK(Tx_Enable_Count));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
@@ -1658,16 +1803,16 @@ int main (int argc, char **argv)
 	printf("Bit positions set to 1 indicate polynomial feedback positions.\n");
 	printf("We read PRBS_ERROR_MASK: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Mask), OFFSET_MSK(PRBS_Error_Mask));
 	printf("Bit positions set to 1 indicate bits that are inverted when a bit error is inserted.\n");
-        printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
+        printf("We read PRBS_BIT_COUNT: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Bit_Count)), OFFSET_MSK(PRBS_Bit_Count));
 	printf("Number of bits received by the PRBS monitor since last BER\n");
 	printf("can be calculated as the ratio of received bits to errored-bits.\n");
-	printf("We read PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
+	printf("We read PRBS_ERROR_COUNT: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Error_Count)), OFFSET_MSK(PRBS_Error_Count));
 	printf("Number of errored-bits received by the PRBS monitor since last BER\n");
 	printf("can be calculated as the ratio of received bits to errored-bits.\n");
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
+	printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(LPF_Accum_F1)), OFFSET_MSK(LPF_Accum_F1));
 	printf("PI controller accumulator value.\n");
-	printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
+	printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)), OFFSET_MSK(LPF_Accum_F2));
 	printf("PI controller accumulator value.\n");
 
 
@@ -1733,7 +1878,7 @@ int main (int argc, char **argv)
 
 	//test xfer register reads
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", READ_MSK(axis_xfer_count), OFFSET_MSK(axis_xfer_count));
+	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(axis_xfer_count)), OFFSET_MSK(axis_xfer_count));
 
 	//discard 24 receiver samples and 24 NCO Samples
 	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
@@ -1743,8 +1888,8 @@ int main (int argc, char **argv)
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read NCO Telemetry:\n");
-	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Deassert INIT: Write 0 to MSK_INIT\n");
@@ -1752,6 +1897,13 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
+#ifdef STREAM_RX_IN_THREAD
+	// Start streaming receive manager
+	if (start_streaming_rx() < 0) {
+		printf("Failed to start streaming receiver\n");
+		return -1;
+	}
+#endif // STREAM_RX_IN_THREAD
 
 #if !defined(OVP_FRAME_MODE) && !defined(STREAMING)
 	//loop variables
@@ -1779,16 +1931,16 @@ int main (int argc, char **argv)
 			usleep(one_bit_time);
 		}
 
-		printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-		printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
-		percent_error = (   (double)(READ_MSK(PRBS_Error_Count))  /  (double)(READ_MSK(PRBS_Bit_Count))    )*100;
-		printf("(1) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), READ_MSK(LPF_Config_2),
-								READ_MSK(LPF_Config_1));
+		printf("(1) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Bit_Count)), OFFSET_MSK(PRBS_Bit_Count));
+		printf("(1) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Error_Count)), OFFSET_MSK(PRBS_Error_Count));
+		percent_error = (   (double)(capture_and_read_msk(OFFSET_MSK(PRBS_Error_Count))  /  (double)(capture_and_read_msk(OFFSET_MSK(PRBS_Bit_Count)))    )*100;
+		printf("(1) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, capture_and_read_msk(OFFSET_MSK(LPF_Accum_F1)), capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)),
+								READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("Read NCO Telemetry:\n");
-		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
 		print_rssi();
 		print_timestamp();
@@ -1889,9 +2041,9 @@ int main (int argc, char **argv)
 				WRITE_MSK(LPF_Config_0, 0x00000000);
 				usleep(num_microseconds);
 				printf("We read LPF_CONFIG_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-				printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F1), OFFSET_MSK(LPF_Accum_F1));
+				printf("We read LPF_ACCUM_F1: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(LPF_Accum_F1)), OFFSET_MSK(LPF_Accum_F1));
 				printf("F1 PI controller accumulator value.\n");
-				printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", READ_MSK(LPF_Accum_F2), OFFSET_MSK(LPF_Accum_F2));
+				printf("We read LPF_ACCUM_F2: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)), OFFSET_MSK(LPF_Accum_F2));
 				printf("F2 PI controller accumulator value.\n");
 
 				printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
@@ -1949,17 +2101,17 @@ int main (int argc, char **argv)
 			usleep(one_bit_time);
 		}
 
-		printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", READ_MSK(PRBS_Bit_Count), OFFSET_MSK(PRBS_Bit_Count));
-		printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", READ_MSK(PRBS_Error_Count), OFFSET_MSK(PRBS_Error_Count));
-		percent_error = ((double)(READ_MSK(PRBS_Error_Count))/(double)(READ_MSK(PRBS_Bit_Count)))*100;
-		printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2),
+		printf("(2) Total PRBS_BIT_COUNT:   (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Bit_Count)), OFFSET_MSK(PRBS_Bit_Count));
+		printf("(2) Total PRBS_ERROR_COUNT: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(PRBS_Error_Count)), OFFSET_MSK(PRBS_Error_Count));
+		percent_error = ((double)(capture_and_read_msk(OFFSET_MSK(PRBS_Error_Count)))/(double)(capture_and_read_msk(OFFSET_MSK(PRBS_Bit_Count))))*100;
+		printf("(2) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, capture_and_read_msk(OFFSET_MSK(LPF_Accum_F1)), capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)),
 				READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
 
 		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		printf("Read NCO Telemetry:\n");
-		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+		printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+		printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
 		print_rssi();
 		print_timestamp();
@@ -1976,13 +2128,13 @@ int main (int argc, char **argv)
 		if(spectacular_success > 20) {
 			spectacular_success = 0;
 			printf("Paul, we had a good run.\n");
-			printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, READ_MSK(LPF_Accum_F1), READ_MSK(LPF_Accum_F2), 
+			printf("(3) %2.1f %d %d 0x%08x 0x%08x\n", percent_error, capture_and_read_msk(OFFSET_MSK()LPF_Accum_F1), capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)), 
 					READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
 
 			printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 			printf("Read NCO Telemetry:\n");
-			printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-			printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+			printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+			printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
 			print_rssi();
 			print_timestamp();
@@ -2070,7 +2222,10 @@ int main (int argc, char **argv)
 	#endif //ENDLESS_PRBS
 #endif // not OVP_FRAME_MODE and not STREAMING_MODE
 
-
+if (start_debug_thread() < 0) {
+	printf("Failed to start debug thread\n");
+	return -1;
+}
 
 #ifdef OVP_FRAME_MODE
     printf("OVP Frame Mode Enabled\n");
@@ -2137,6 +2292,16 @@ int main (int argc, char **argv)
 		// Schedule TX buffer
 		// nbytes_tx = iio_buffer_push(txbuf);
 
+		//!!! try to keep the FIFOs happy by checking RX every time. rxbuf must be non-blocking.
+		nbytes_rx = iio_buffer_refill(rxbuf);
+		if (nbytes_rx == -EAGAIN) {
+			printf("buffer_refill says EAGAIN\n");
+		} else if (nbytes_rx > 0) {
+			printf("streaming rx fetched %d bytes\n", nbytes_rx);
+		} else {
+			printf("streaming rx reports error %d\n", -nbytes_rx);
+		}
+
     	nbytes_tx = iio_buffer_push(txbuf);
 		printf("OVP: streaming iio_buffer_push of %d bytes took %dms.\n", nbytes_tx, get_timestamp_ms()-local_ts_base);
 
@@ -2144,10 +2309,11 @@ int main (int argc, char **argv)
 		// Use AXI stream transfer count register to see if data is getting to our logic
 //!!!
 		old_data = new_data;
-		new_data = msk_register_map->axis_xfer_count;
+		new_data = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
 		printf("AXIS_XFER_COUNT delta after iio_buffer_push is (0x%08x)\n", new_data - old_data);
 		printf("AXIS_XFER_COUNT after iio_buffer_push is (0x%08x)\n", new_data);
-		printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  READ_MSK(Tx_Bit_Count), OFFSET_MSK(Tx_Bit_Count));
+		printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  capture_and_read_msk(OFFSET_MSK(Tx_Bit_Count)), OFFSET_MSK(Tx_Bit_Count));
+		printf("TX_BIT_COUNT decimal %d %lld\n", READ_MSK(Tx_Bit_Count), get_timestamp_us());
 
 
 		if (nbytes_tx < 0) {
@@ -2158,7 +2324,7 @@ int main (int argc, char **argv)
 #endif //not RX_ACTIVE
 
 // disable rx: #if 0
-#ifdef RX_ACTIVE
+#if defined(RX_ACTIVE) & !defined(STREAM_RX_IN_THREAD)
 		// Refill RX buffer
 		refill_ts_base = get_timestamp_ms();
 		nbytes_rx = iio_buffer_refill(rxbuf);
@@ -2186,7 +2352,7 @@ int main (int argc, char **argv)
 // disable rx: #endif // 0
 #else
 		nbytes_rx = 0;
-#endif // RX_ACTIVE
+#endif // RX_ACTIVE & !STREAM_RX_IN_THREAD
 
 		// WRITE: Get pointers to TX buf and write IQ to TX buf port 0
 		uint8_t value;
@@ -2228,7 +2394,7 @@ int main (int argc, char **argv)
 		*/
 		
 // disable rx: #if 0
-#ifdef RX_ACTIVE
+#if defined(RX_ACTIVE) & !defined(STREAM_RX_IN_THREAD) 
 		if (nbytes_rx > 0) {
 			// dump received buffer for visual check
 			printf("Received: ");
@@ -2240,7 +2406,7 @@ int main (int argc, char **argv)
 			printf("\n");
 		}
 // disable rx: #endif // 0
-#endif // RX_ACTIVE
+#endif // RX_ACTIVE & !STREAM_RX_IN_THREAD
 	}
 #endif // STREAMING
 
