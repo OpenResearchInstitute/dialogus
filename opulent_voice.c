@@ -1480,11 +1480,14 @@ void dump_buffer(char *buffer_name, struct iio_buffer *buf)
 {
 	uint8_t *p_dat;
 	uint8_t *p_end;
+	ptrdiff_t p_inc;
 
 	printf("Dump of %s:\n", buffer_name);
 
 	p_end = iio_buffer_end(rxbuf);
-	for (p_dat = (uint8_t *)iio_buffer_first(buf, tx0_i); p_dat < p_end; p_dat++) {
+	p_inc = iio_buffer_step(rxbuf);
+
+	for (p_dat = (uint8_t *)iio_buffer_first(buf, tx0_i); p_dat < p_end; p_dat += p_inc) {
 		printf("%02x ", *p_dat);
 	}
 	printf("\n");
