@@ -163,6 +163,7 @@ float percent_error = 55.0;
 int i; //index variable for loops
 
 pthread_t ovp_debug_thread;
+void dump_buffer(char *buffer_name, struct iio_buffer *buf);
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 static pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
@@ -1314,7 +1315,9 @@ void* ovp_streaming_rx_thread(__attribute__((unused)) void *arg) {
 			printf("OVP: streaming buffer_refill (threaded) of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
 		}
 
-		usleep(50000);	// 50ms
+		dump_buffer("refilled buffer", rxbuf);
+
+		//!!! usleep(50000);	// 50ms
 
 	}
 
