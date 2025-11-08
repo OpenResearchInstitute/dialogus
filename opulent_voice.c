@@ -138,15 +138,12 @@ const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
 #define TX_SYNC_CTRL_WORD 0x00000000
 #define TX_SYNC_COUNT (54200 * 20)	// long preamble for test detection
 
-#define TX_DMAC_CONTROL_REGISTER 0x00
-#define TX_DMAC_STATUS_REGISTER 0x04
-#define TX_DMAC_IDENTIFICATION 0x000c
-#define TX_DMAC_SCRATCH 0x0008
-#define TX_DMAC_INTERFACE 0x0010
-#define TX_DMAC_DEST_ADDRESS 0x0410
-#define TX_DMAC_SRC_ADDRESS 0x0414
-#define TX_DMAC_PERIPHERAL_ID 0x004
-#define ENCODER_CONTROL_REGISTER 0x00
+// Offsets into either DMAC (TX or RX) for registers in that block.
+// Only registers we actually use are defined here.
+// All the registers are defined in /hdl/library/axi_dmac/index.html
+#define DMAC_PERIPHERAL_ID 0x0004
+#define DMAC_SCRATCH 0x0008
+#define DMAC_INTERFACE_DESCRIPTION_1 0x0010
 
 // For the MSK registers, we use RDL headers
 #include "msk_top_regs.h"
@@ -271,7 +268,7 @@ unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int valu
 // power = capture_and_read_msk(OFFSET_MSK(rx_power));
 uint32_t capture_and_read_msk(size_t offset) {
 	volatile uint32_t *reg_ptr;
-	uint32_t dummy_read;
+	uint32_t dummy_read __attribute__((unused));
 	
 	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
 
@@ -292,13 +289,6 @@ uint32_t capture_and_read_msk(size_t offset) {
 //value = OFFSET_MSK(MSK_Init);
 #define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
 
-//delete
-void  dma_interface(unsigned int *virtual_addr)
-{
-        unsigned int interface = read_dma(virtual_addr, TX_DMAC_INTERFACE);
-        printf("TX DMAC Interface Description (0x%08x@0x%04x):\n", interface, TX_DMAC_INTERFACE);
-        //break out and parse the fields in human readable format
-}
 
 uint64_t get_timestamp(void) {
     uint32_t high, low;
@@ -1306,13 +1296,13 @@ void* ovp_streaming_rx_thread(__attribute__((unused)) void *arg) {
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) {
 				if (nbytes_rx == -ETIMEDOUT) {
-					printf("Refill timeout (no sync word yet?)\n");
+					printf("Refill timeout in thread (no sync word yet?) took %dms\n", get_timestamp_ms() - refill_ts_base);
 					nbytes_rx = 0;
 				} else {
-					printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+					printf("Error refilling buf (in thread) %d\n",(int) nbytes_rx); cleanup_and_exit();
 				}
 		} else {
-			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
+			printf("OVP: streaming buffer_refill (threaded) of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
 		}
 
 		usleep(50000);	// 50ms
@@ -1589,9 +1579,11 @@ int main (int argc, char **argv)
 		cleanup_and_exit();
 	}
 
+	#if !defined(STREAM_RX_IN_THREAD)
 	if (iio_buffer_set_blocking_mode(rxbuf, false) < 0) {	//!!!set non-blocking
 		printf("Failed to make rxbuf non-blocking\n");
 	}
+	#endif // STREAM_RX_IN_THREAD
 
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!txbuf) {
@@ -1600,19 +1592,15 @@ int main (int argc, char **argv)
 	}
 
 	printf("Hello World!\n");
-	printf("Opening character device files in DDR memory.\n");
+	printf("Setting for memory-mapped registers in the PL.\n");
 	int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
-	printf("Memory map the address of the TX-DMAC via its AXI lite control interface register block.\n");
-	unsigned int *dma_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
-
-	printf("RDL Memory map the address of the MSK block via its AXI lite control interface.\n");
-//	msk_top_regs_t *msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
+	// Memory map the address of the TX-DMAC via its AXI lite control interface register block
+	unsigned int *tx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
+	// Memory map the address of the RX-DMAC via its AXI lite control interface register block
+	unsigned int *rx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c400000);
+	// Memory map the address of the MSK block via its AXI lite control interface
 	msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
-
-//	printf("Memory map the address of the MSK block via its AXI lite control interface.\n");
-//	unsigned int *msk_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
-
-	printf("Memory map the address of the peripherals block so we can use the hardware timer.\n");
+	// Memory map the address of the peripherals block so we can use the hardware timer
 	timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
 	if (timer_register_map == MAP_FAILED) {
 		printf("Failed top map timer registers\n");
@@ -1620,12 +1608,19 @@ int main (int argc, char **argv)
 		exit(1);
 	}
 
-    dma_interface(dma_virtual_addr);
+	unsigned int interface = read_dma(tx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
+	printf("TX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
+	interface = read_dma(rx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
+	printf("RX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
 
 	printf("Writing to scratch register in TX-DMAC.\n");
-    write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
-    printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
-	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_PERIPHERAL_ID), TX_DMAC_PERIPHERAL_ID);
+    write_dma(tx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
+    printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(tx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
+	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
+	printf("Writing to scratch register in RX-DMAC.\n");
+    write_dma(rx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
+    printf("Reading from scratch register in RX-DMAC. We see: (0x%08x@%04x)\n", read_dma(rx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
+	printf("Reading the RX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Configure MSK for minimum viable product test.\n");
@@ -2269,8 +2264,7 @@ if (start_debug_thread() < 0) {
     uint32_t old_data __attribute__((unused)) = 0, new_data __attribute__((unused)) = 0;
 	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
-	uint32_t refill_ts_base;
-	uint32_t extra_delay;
+	uint32_t refill_ts_base __attribute__((unused));
 
 	printf("* Initializing fake transmit stream\n");
 	txstream_init();
@@ -2292,6 +2286,7 @@ if (start_debug_thread() < 0) {
 		// Schedule TX buffer
 		// nbytes_tx = iio_buffer_push(txbuf);
 
+#if !defined(STREAM_RX_IN_THREAD)
 		//!!! try to keep the FIFOs happy by checking RX every time. rxbuf must be non-blocking.
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx == -EAGAIN) {
@@ -2301,6 +2296,7 @@ if (start_debug_thread() < 0) {
 		} else {
 			printf("streaming rx reports error %d\n", -nbytes_rx);
 		}
+#endif // STREAM_RX_IN_THREAD
 
     	nbytes_tx = iio_buffer_push(txbuf);
 		printf("OVP: streaming iio_buffer_push of %d bytes took %dms.\n", nbytes_tx, get_timestamp_ms()-local_ts_base);
@@ -2324,13 +2320,13 @@ if (start_debug_thread() < 0) {
 #endif //not RX_ACTIVE
 
 // disable rx: #if 0
-#if defined(RX_ACTIVE) & !defined(STREAM_RX_IN_THREAD)
+#if defined(RX_ACTIVE) && !defined(STREAM_RX_IN_THREAD)
 		// Refill RX buffer
 		refill_ts_base = get_timestamp_ms();
 		nbytes_rx = iio_buffer_refill(rxbuf);
 		if (nbytes_rx < 0) {
 				if (nbytes_rx == -ETIMEDOUT) {
-					printf("Refill timeout (no sync word yet?)\n");
+					printf("Refill timeout with STREAMING (no sync word yet?)\n");
 					nbytes_rx = 0;
 				} else {
 					printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
@@ -2381,20 +2377,9 @@ if (start_debug_thread() < 0) {
 		printf("\tRX %8.2f MSmp, TX %8.2f MSmp\n", nrx/1e6, ntx/1e6);
 
 		//dump_buffer("rxbuf", rxbuf);
-
-		//!!! for a test, we will meter out the buffer pushes to ~40ms
-		/*
-		extra_delay = push_ts_base + 40 - get_timestamp_ms();
-		if (extra_delay > 0) {
-			printf("Adding %dms extra delay for pacing\n", extra_delay);
-			usleep(1000 * extra_delay);
-		} else {
-			printf("extra delay was %d, none added.\n", extra_delay);
-		}
-		*/
 		
 // disable rx: #if 0
-#if defined(RX_ACTIVE) & !defined(STREAM_RX_IN_THREAD) 
+#if defined(RX_ACTIVE) && !defined(STREAM_RX_IN_THREAD) 
 		if (nbytes_rx > 0) {
 			// dump received buffer for visual check
 			printf("Received: ");
