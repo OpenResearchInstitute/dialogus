@@ -144,6 +144,9 @@ const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
 #define DMAC_PERIPHERAL_ID 0x0004
 #define DMAC_SCRATCH 0x0008
 #define DMAC_INTERFACE_DESCRIPTION_1 0x0010
+#define DMAC_IRQ_MASK 0x0080
+#define DMAC_IRQ_PENDING 0x0084
+#define DMAC_IRQ_SOURCE 0x0088
 
 // For the MSK registers, we use RDL headers
 #include "msk_top_regs.h"
@@ -245,6 +248,11 @@ unsigned int read_dma(unsigned int *virtual_addr, int offset)
         return virtual_addr[offset>>2];
 }
 
+// Addresses of the DMACs via their AXI lite control interface register blocks
+unsigned int *tx_dmac_register_map;
+unsigned int *rx_dmac_register_map;
+
+// Address of the MSK block via its AXI lite control interface register block
 static msk_top_regs_t *msk_register_map = NULL;
 
 //read a value from the MSK register
@@ -1340,12 +1348,18 @@ void* ovp_debug_threadf(__attribute__((unused)) void *arg) {
 
 		pthread_mutex_lock(&timeline_lock);
 			now = get_timestamp_ms();
-			printf("debugthread at %dms: tx fifo: 0x%08x rx fifo: 0x%08x rx power: 0x%08x\n", now,
+			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
 							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
-							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)), 
-							capture_and_read_msk(OFFSET_MSK(rx_power))
-						);
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
+			printf("debugthread power at %d %d ", now,
+							capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
+// polling the DMA controller interrupts doesn't work, it's too fast and probably
+// also happening all at once during an interrupt handler.
+//			printf("debugthread dmac at %d %08x %08x %08x\n", now,
+//							read_dma(rx_dmac_register_map, DMAC_IRQ_MASK),
+//							read_dma(rx_dmac_register_map, DMAC_IRQ_PENDING),
+//							read_dma(rx_dmac_register_map, DMAC_IRQ_SOURCE));
 		pthread_mutex_unlock(&timeline_lock);
 
 		usleep(10000);
@@ -1595,9 +1609,9 @@ int main (int argc, char **argv)
 	printf("Setting for memory-mapped registers in the PL.\n");
 	int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
 	// Memory map the address of the TX-DMAC via its AXI lite control interface register block
-	unsigned int *tx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
+	tx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
 	// Memory map the address of the RX-DMAC via its AXI lite control interface register block
-	unsigned int *rx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c400000);
+	rx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c400000);
 	// Memory map the address of the MSK block via its AXI lite control interface
 	msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
 	// Memory map the address of the peripherals block so we can use the hardware timer
