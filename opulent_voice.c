@@ -147,6 +147,7 @@ const uint8_t ovp_sync_word[OVP_SYNC_WORD_SIZE] = {0xE2, 0x5F, 0x35};
 #define DMAC_IRQ_MASK 0x0080
 #define DMAC_IRQ_PENDING 0x0084
 #define DMAC_IRQ_SOURCE 0x0088
+#define DMAC_FLAGS 0x040c
 
 // For the MSK registers, we use RDL headers
 #include "msk_top_regs.h"
@@ -1354,6 +1355,9 @@ void* ovp_debug_threadf(__attribute__((unused)) void *arg) {
 			printf("debugthread power at %d %d ", now,
 							capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
+			printf("debugthread dmac at %d %08x %08x\n", now,
+							read_dma(tx_dmac_register_map, DMAC_FLAGS),
+							read_dma(rx_dmac_register_map, DMAC_FLAGS));
 // polling the DMA controller interrupts doesn't work, it's too fast and probably
 // also happening all at once during an interrupt handler.
 //			printf("debugthread dmac at %d %08x %08x %08x\n", now,
