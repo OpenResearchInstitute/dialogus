@@ -1781,10 +1781,10 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-	if (start_debug_thread() < 0) {
-		printf("Failed to start debug thread\n");
-		return -1;
-	}
+//	if (start_debug_thread() < 0) {
+//		printf("Failed to start debug thread\n");
+//		return -1;
+//	}
 
 	// Start OVP Timeline Manager
 	if (start_timeline_manager() < 0) {
