@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Opulent Voice transmission code
- *
- * Copyright (C) 2024 IABG mbH and ORI
- * Author: Michael Feilen <feilen_at_iabg.de>
+ * Opulent Voice frame-level transmission and reception code
  * 
  * Copyright (C) 2025 Open Research Institute
  * Skunkwrx and Abraxas3d
+ * 
  **/
 
 
@@ -73,15 +71,15 @@
 #define TX_SYNC_CTRL_WORD 0x00000000
 #define TX_SYNC_COUNT (54200 * 20)	// long preamble for test detection
 
-#define TX_DMAC_CONTROL_REGISTER 0x00
-#define TX_DMAC_STATUS_REGISTER 0x04
-#define TX_DMAC_IDENTIFICATION 0x000c
-#define TX_DMAC_SCRATCH 0x0008
-#define TX_DMAC_INTERFACE 0x0010
-#define TX_DMAC_DEST_ADDRESS 0x0410
-#define TX_DMAC_SRC_ADDRESS 0x0414
-#define TX_DMAC_PERIPHERAL_ID 0x004
-#define ENCODER_CONTROL_REGISTER 0x00
+// Offsets into either DMAC (TX or RX) for registers in that block.
+// All the registers are defined in /hdl/library/axi_dmac/index.html
+#define DMAC_PERIPHERAL_ID 0x0004
+#define DMAC_SCRATCH 0x0008
+#define DMAC_INTERFACE_DESCRIPTION_1 0x0010
+#define DMAC_IRQ_MASK 0x0080
+#define DMAC_IRQ_PENDING 0x0084
+#define DMAC_IRQ_SOURCE 0x0088
+#define DMAC_FLAGS 0x040c
 
 // For the MSK registers, we use RDL headers
 #include "msk_top_regs.h"
@@ -94,6 +92,7 @@
 float num_microseconds = 5*20;
 float one_bit_time = 19;
 float percent_error = 55.0;
+pthread_t ovp_debug_thread;
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 // OVP UDP Interface
@@ -188,7 +187,7 @@ void decode_ovp_header(uint8_t *input, uint8_t *output);
 void decode_ovp_payload(uint8_t *input, uint8_t *output);
 void create_dummy_frame(void);
 void create_postamble_frame(void);
-
+void stop_debug_thread(void);
 
 /* Register addresses for using the hardware timer */
 #define PERIPH_BASE 0xf8f00000
@@ -202,17 +201,24 @@ static uint32_t *timer_register_map;
 
 
 //read from a memory mapped register
-unsigned int read_dma(unsigned int *virtual_addr, int offset)
+unsigned int read_mapped_reg(unsigned int *virtual_addr, int offset)
 {
         return virtual_addr[offset>>2];
 }
+
+// Addresses of the DMACs via their AXI lite control interface register blocks
+unsigned int *tx_dmac_register_map;
+unsigned int *rx_dmac_register_map;
+
+// Address of the MSK block via its AXI lite control interface register block
+static msk_top_regs_t *msk_register_map = NULL;
 
 //read a value from the MSK register
 //value = READ_MSK(MSK_Init);
 #define READ_MSK(offset) (msk_register_map->offset)
 
 //write to a memory mapped register
-unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int value)
+unsigned int write_mapped_reg(unsigned int *virtual_addr, int offset, unsigned int value)
 {       virtual_addr[offset>>2] = value;
         return 0;
 }
@@ -222,17 +228,28 @@ unsigned int write_dma(unsigned int *virtual_addr, int offset, unsigned int valu
 //WRITE_MSK(MSK_Init, 0x00000001);
 #define WRITE_MSK(offset, value) *(volatile uint32_t*)&(msk_register_map->offset) = value
 
+// Some registers require synchronization across clock domains.
+// This is implemented by first writing (any value) and then reading the register.
+// The current value is captured, triggered by the write, and can then be read safely.
+// power = capture_and_read_msk(OFFSET_MSK(rx_power));
+uint32_t capture_and_read_msk(size_t offset) {
+	volatile uint32_t *reg_ptr;
+	
+	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
+
+	// write to capture
+	*reg_ptr = 0xDEADBEEF;	// write a distinctive value in case it shows up in a read
+
+	// Trusting that the CPU is slow enough to make this safe across clock domains
+	// without any artificial delay here.
+
+	// read actual value
+	return *reg_ptr;
+}
+
 //get the address offset of an MSK register
 //value = OFFSET_MSK(MSK_Init);
 #define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
-
-//interface for access to registers in the TX DMAC from Pluto reference design
-void  dma_interface(unsigned int *virtual_addr)
-{
-        unsigned int interface = read_dma(virtual_addr, TX_DMAC_INTERFACE);
-        printf("TX DMAC Interface Description (0x%08x@0x%04x):\n", interface, TX_DMAC_INTERFACE);
-        //break out and parse the fields in human readable format
-}
 
 // Timestamp facility, hardware locked to the sample clock
 uint64_t get_timestamp(void) {
@@ -243,10 +260,10 @@ uint64_t get_timestamp(void) {
        It handles the case where the first read of the two timer regs
        spans a carry between the two timer words. */
     do {
-        high = read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET);
-        low = read_dma(timer_register_map, GLOBAL_TMR_LOWER_OFFSET);
+        high = read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET);
+        low = read_mapped_reg(timer_register_map, GLOBAL_TMR_LOWER_OFFSET);
         // printf("%08x %08x\n", high, low);
-    } while (read_dma(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
+    } while (read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
     return((((uint64_t) high) << 32U) | (uint64_t) low);
 }
 
@@ -290,7 +307,6 @@ static struct iio_channel *tx0_i = NULL;
 static struct iio_channel *tx0_q = NULL;
 static struct iio_buffer  *rxbuf = NULL;
 static struct iio_buffer  *txbuf = NULL;
-static msk_top_regs_t *msk_register_map = NULL;
 
 static bool stop;
 
@@ -565,7 +581,7 @@ int push_txbuf_to_msk(void) {
     }
     
     // Check that data is flowing to MSK block
-    uint32_t new_xfer_count = READ_MSK(axis_xfer_count);
+    uint32_t new_xfer_count = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
     uint32_t delta = new_xfer_count - old_xfer_count;
     
     printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
@@ -1344,7 +1360,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
             // remove the randomization
             randomize_ovp_frame(decoded_frame);
 
-            // dump received data for visual check
+            //!!! dump received data for visual check
 			printf("Received processed data: ");
             for (int i=0; i < OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", decoded_frame[i]);
@@ -1405,6 +1421,48 @@ void stop_ovp_receiver(void) {
     }
         
     printf("OVP: receiver stopped\n");
+}
+
+
+// ---------- Debug Thread -----------------------------
+
+void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
+	while (!stop) {
+		uint32_t now;
+
+		pthread_mutex_lock(&timeline_lock);
+			now = get_timestamp_ms();
+			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
+							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
+			printf("debugthread power at %d %d ", now,
+							capture_and_read_msk(OFFSET_MSK(rx_power)));
+			print_rssi();
+		pthread_mutex_unlock(&timeline_lock);
+
+		usleep(10000);
+	}
+	printf("debug thread exiting\n");
+	return NULL;
+}
+
+int start_debug_thread(void) {
+
+    if (pthread_create(&ovp_debug_thread, NULL, ovp_debug_thread_func, NULL) != 0) {
+        perror("OVP: Failed to create debug thread");
+        return -1;
+    }
+    
+    printf("OVP: debug thread started successfully\n");
+    return 0;
+}
+
+void stop_debug_thread(void) {
+    if (ovp_debug_thread) {
+        pthread_cancel(ovp_debug_thread);
+    }
+        
+    printf("OVP: debug thread stopped\n");
 }
 
 
@@ -1517,16 +1575,15 @@ int main (int argc, char **argv)
 		cleanup_and_exit();
 	}
 
-	printf("Opening character device files in DDR memory.\n");
+	printf("Setting for memory-mapped registers in the PL.\n");
 	int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
-
-	printf("Memory map the address of the TX-DMAC via its AXI lite control interface register block.\n");
-	unsigned int *dma_virtual_addr = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
-
-	printf("RDL Memory map the address of the MSK block via its AXI lite control interface.\n");
+	// Memory map the address of the TX-DMAC via its AXI lite control interface register block
+	tx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
+	// Memory map the address of the RX-DMAC via its AXI lite control interface register block
+	rx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c400000);
+	// Memory map the address of the MSK block via its AXI lite control interface
 	msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
-
-	printf("Memory map the address of the peripherals block so we can use the hardware timer.\n");
+	// Memory map the address of the peripherals block so we can use the hardware timer
 	timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
 	if (timer_register_map == MAP_FAILED) {
 		printf("Failed top map timer registers\n");
@@ -1534,12 +1591,20 @@ int main (int argc, char **argv)
 		exit(1);
 	}
 
-    dma_interface(dma_virtual_addr);
+	unsigned int interface = read_mapped_reg(tx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
+	printf("TX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
+	interface = read_mapped_reg(rx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
+	printf("RX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
 
 	printf("Writing to scratch register in TX-DMAC.\n");
-    write_dma(dma_virtual_addr, TX_DMAC_SCRATCH, 0x5555AAAA);
-    printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_SCRATCH), TX_DMAC_SCRATCH);
-	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_dma(dma_virtual_addr, TX_DMAC_PERIPHERAL_ID), TX_DMAC_PERIPHERAL_ID);
+    write_mapped_reg(tx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
+    printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
+	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
+	printf("Writing to scratch register in RX-DMAC.\n");
+    write_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
+    printf("Reading from scratch register in RX-DMAC. We see: (0x%08x@%04x)\n", read_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
+	printf("Reading the RX-DMAC peripheral ID: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
+
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Configure MSK for minimum viable product test.\n");
@@ -1577,11 +1642,11 @@ int main (int argc, char **argv)
 	printf("Bit 0 is demod_sync(not implemented), bit 1 is tx_enable, bit 2 is rx_enable\n");
 	printf("tx_enable is data to DAC enabled. rx_enable is data from ADC enable.\n");
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  READ_MSK(Tx_Bit_Count), OFFSET_MSK(Tx_Bit_Count));
+	printf("TX_BIT_COUNT register is read, we see: (0x%08x@%04x)\n",  capture_and_read_msk(OFFSET_MSK(Tx_Bit_Count)), OFFSET_MSK(Tx_Bit_Count));
 	printf("This register reads out the count of data requests made by the modem.\n");
     printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("TX_ENABLE_COUNT register is read and write. It holds the number of clocks on which Tx Enable is active.\n");
-	printf("First we read it, we see: (0x%08x@%04x)\n", READ_MSK(Tx_Enable_Count), OFFSET_MSK(Tx_Enable_Count));
+	printf("First we read it, we see: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(Tx_Enable_Count)), OFFSET_MSK(Tx_Enable_Count));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Writing fb, f1, f2 (values are calculated for MSK TX).\n");
 
@@ -1693,7 +1758,7 @@ int main (int argc, char **argv)
 
 	//test xfer register reads
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", READ_MSK(axis_xfer_count), OFFSET_MSK(axis_xfer_count));
+	printf("The value of axis_xfer_count is: (0x%08x@%04x)\n", capture_and_read_msk(OFFSET_MSK(axis_xfer_count)), OFFSET_MSK(axis_xfer_count));
 
 	//discard 24 receiver samples and 24 NCO Samples
 	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
@@ -1703,8 +1768,8 @@ int main (int argc, char **argv)
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read NCO Telemetry:\n");
-	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", READ_MSK(f1_nco_adjust), READ_MSK(f2_nco_adjust));
-	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", READ_MSK(f1_error), READ_MSK(f2_error));
+	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Deassert INIT: Write 0 to MSK_INIT\n");
@@ -1712,7 +1777,10 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-    printf("OVP Frame Mode Enabled\n");
+	if (start_debug_thread() < 0) {
+		printf("Failed to start debug thread\n");
+		return -1;
+	}
 
 	// Start OVP Timeline Manager
 	if (start_timeline_manager() < 0) {
