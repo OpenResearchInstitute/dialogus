@@ -1440,6 +1440,12 @@ void stop_ovp_receiver(void) {
 // ---------- Debug Thread -----------------------------
 
 void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
+	uint32_t sync_status;
+	bool frame_sync_locked;
+	bool frame_buffer_overflow;
+	uint32_t frames_received = 0;
+	uint32_t frame_sync_errors = 0;
+
 	while (!stop) {
 		uint32_t now;
 
@@ -1448,10 +1454,20 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
 							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
 							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
-//			printf("debugthread power at %d %d ", now,
-//							capture_and_read_msk(OFFSET_MSK(rx_power)));
-			printf("debugthread at %d ", now);
+			printf("debugthread power at %d %d ", now,
+							capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
+			sync_status = capture_and_read_msk(OFFSET_MSK(rx_frame_sync_status));
+			frame_sync_locked = sync_status & 0x00000001;
+			frame_buffer_overflow = sync_status & 0x00000002;
+			frames_received += (sync_status & 0x03fffffc) >> 2;
+			frame_sync_errors += ((sync_status & 0xfc000000) >> 26) & 0x3f;
+			printf("debugthread frame at %d ms: raw 0x%08x rcvd %d, errs %d %s %s\n", now,
+				sync_status,
+				frames_received,
+				frame_sync_errors,
+				frame_sync_locked ? "LOCKED" : "unlocked",
+				frame_buffer_overflow ? "OVERFLOW" : "");
 		pthread_mutex_unlock(&timeline_lock);
 
 		usleep(10000);
