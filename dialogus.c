@@ -235,6 +235,7 @@ unsigned int write_mapped_reg(unsigned int *virtual_addr, int offset, unsigned i
 // power = capture_and_read_msk(OFFSET_MSK(rx_power));
 uint32_t capture_and_read_msk(size_t offset) {
 	volatile uint32_t *reg_ptr;
+	volatile uint32_t dummy_read;
 	
 	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
 
@@ -243,6 +244,8 @@ uint32_t capture_and_read_msk(size_t offset) {
 
 	// Trusting that the CPU is slow enough to make this safe across clock domains
 	// without any artificial delay here.
+	// or maybe not!!!
+	dummy_read = *reg_ptr;
 
 	// read actual value
 	return *reg_ptr;
@@ -574,7 +577,7 @@ int push_txbuf_to_msk(void) {
 	uint32_t local_ts_base;
 
 	local_ts_base = get_timestamp_ms();
-	printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
+	// printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
 	push_ts_base = local_ts_base;
 	ssize_t result = iio_buffer_push(txbuf);
 	printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
@@ -611,7 +614,7 @@ int enable_msk_transmission(void) {
 
 // Disable PTT and stop MSK transmission
 int disable_msk_transmission(void) {
-	printf("OVP: Disabling MSK transmission (PTT OFF)\n");
+	printf("timeline @ %lld: Disabling MSK transmission (PTT OFF)\n", get_timestamp_us() - session_T0);
 	WRITE_MSK(MSK_Control, 0x00000000);	// PTT off
 	
 	uint32_t status = READ_MSK(MSK_Status);
@@ -1138,15 +1141,18 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 
 	while (!stop) {
 		while (ovp_transmission_active) {
-			printf("timeline grabbing mutex\n");
+			// printf("timeline grabbing mutex\n");
 			pthread_mutex_lock(&timeline_lock);
 			if (decision_time != 0) {
 				now = get_timestamp_us();
-				printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
+				// printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
 					if (ovp_txbufs_this_frame > 0) {
 						if (ovp_txbufs_this_frame > 1) {
 							ovp_untimely_frames += ovp_txbufs_this_frame - 1;
+							printf("timeline @ %lld: frame + %d untimely frames ", get_timestamp_us() - session_T0, ovp_txbufs_this_frame - 1);
+						} else {
+							printf("timeline @ %lld: frame ", get_timestamp_us() - session_T0);
 						}
 						ovp_frames_processed++;
 						hang_time_dummy_count = 0;
@@ -1154,11 +1160,13 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 					} else {
 						if (hang_time_dummy_count >= hang_timer_frames) {
 							create_postamble_frame();
+							printf("timeline @ %lld: postamble ", get_timestamp_us() - session_T0);
 							hang_time_dummy_count = 0;
 							hang_timer_active = 0;
 							ovp_transmission_active = 0;
 						} else {
 							create_dummy_frame();
+							printf("timeline @ %lld: dummy frame ", get_timestamp_us() - session_T0);
 							ovp_dummy_frames_sent++;
 							hang_time_dummy_count++;
 							hang_timer_active = 1;
@@ -1166,7 +1174,7 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 					}
 					local_ts_base = get_timestamp_ms();
 					iio_buffer_push(txbuf);
-					printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 					decision_time += 40e3;
 					ovp_txbufs_this_frame = 0;
 				}
@@ -1177,7 +1185,7 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 				}
 			}
 			pthread_mutex_unlock(&timeline_lock);
-			printf("timeline released mutex\n");
+			// printf("timeline released mutex\n");
 
 			now = get_timestamp_us();
 			if (decision_time - now > 0) {
@@ -1439,8 +1447,9 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
 							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
 							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
-			printf("debugthread power at %d %d ", now,
-							capture_and_read_msk(OFFSET_MSK(rx_power)));
+//			printf("debugthread power at %d %d ", now,
+//							capture_and_read_msk(OFFSET_MSK(rx_power)));
+			printf("debugthread at %d ", now);
 			print_rssi();
 		pthread_mutex_unlock(&timeline_lock);
 
@@ -1566,7 +1575,7 @@ int main (int argc, char **argv)
 				printf("* set_timeout returned %d, which is a success.\n", ret);
 		}
 
-	printf("* Creating non-cyclic IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
+	printf("* Creating IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
 	rxbuf = iio_device_create_buffer(rx, OVP_DEMOD_FRAME_SIZE, false);
 	if (!rxbuf) {
 		perror("Could not create RX buffer");
@@ -1627,6 +1636,9 @@ int main (int argc, char **argv)
 	printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
+	printf("Initial FIFOs before INIT: tx fifo: %08x rx fifo: %08x\n",
+							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
 
 	printf("Initialize MSK block.\n");
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
@@ -1730,7 +1742,7 @@ int main (int argc, char **argv)
 	printf("Read TX_DATA_WIDTH.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Tx_Data_Width), OFFSET_MSK(Tx_Data_Width));
 
-	printf("Set RX_DATA_WIDTH to 32.\n");
+	printf("Set RX_DATA_WIDTH to 8.\n");
 	WRITE_MSK(Rx_Data_Width, 0x00000008);
 	printf("Read RX_DATA_WIDTH.\n");
 	printf("We see: (0x%08x@%04x)\n", READ_MSK(Rx_Data_Width), OFFSET_MSK(Rx_Data_Width));
@@ -1781,10 +1793,17 @@ int main (int argc, char **argv)
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
-//	if (start_debug_thread() < 0) {
-//		printf("Failed to start debug thread\n");
-//		return -1;
-//	}
+	printf("Initial FIFOs at INIT: tx fifo: %08x rx fifo: %08x\n",
+							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
+	
+	printf("Rx DMAC FLAGS after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_FLAGS));
+	printf("Rx DMAC Irq_Mask after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_IRQ_MASK));
+
+	if (start_debug_thread() < 0) {
+		printf("Failed to start debug thread\n");
+		return -1;
+	}
 
 	// Start OVP Timeline Manager
 	if (start_timeline_manager() < 0) {
