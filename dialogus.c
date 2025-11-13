@@ -1460,8 +1460,8 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 			sync_status = capture_and_read_msk(OFFSET_MSK(rx_frame_sync_status));
 			frame_sync_locked = sync_status & 0x00000001;
 			frame_buffer_overflow = sync_status & 0x00000002;
-			frames_received += (sync_status & 0x03fffffc) >> 2;
-			frame_sync_errors += ((sync_status & 0xfc000000) >> 26) & 0x3f;
+			frames_received = (sync_status & 0x03fffffc) >> 2;
+			frame_sync_errors = ((sync_status & 0xfc000000) >> 26) & 0x3f;
 			printf("debugthread frame at %d ms: raw 0x%08x rcvd %d, errs %d %s %s\n", now,
 				sync_status,
 				frames_received,
