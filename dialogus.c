@@ -1342,7 +1342,8 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 		} else {
 			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
 
-			if (nbytes_rx != OVP_DEMOD_FRAME_SIZE) {
+			// nbytes_rx includes the three wasted bytes for each byte transferred via AXI-S
+			if (nbytes_rx != OVP_DEMOD_FRAME_SIZE * 4) {
 				printf("Warning: unexpected rx frame size %d; discarded!\n", nbytes_rx);
 				continue;
 			}
