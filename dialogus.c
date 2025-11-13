@@ -1827,6 +1827,12 @@ int main (int argc, char **argv)
 		printf("Press Ctrl+C to stop\n");
 	}
 
+	// Start OVP Receiver
+	if (start_ovp_receiver() < 0) {
+		printf("Failed to start OVP receiver\n");
+		return -1;	// exit if OVP receiver can't be started
+	}
+
 	// Main loop for OVP mode - keep program running
 	while (!stop) {
 		usleep(1e6);	// one second sleep
