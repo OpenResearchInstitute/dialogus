@@ -92,8 +92,11 @@ ssh -J ori@raspi.local -t root@192.168.3.2 /tmp/msk_test
 
 ## What is what
 
-Mainline development has switched from `msk_rx_init.c`
-to `opulent_voice.c`, as we switch the focus to communicating
+Mainline development has split into two paths. A stream-oriented
+test-and-debug path is maintained in `opulent_voice.c`, with
+various #define switches configuring the test implementation.
+The main forward path is now in `dialogus.c`, which implements
+the fully frame-oriented flow we intend to use for communicating
 with the MSK modulator in a realistic manner.
 
 ## Building the Application on Ubuntu (cross-platform)
@@ -144,11 +147,10 @@ won't work on a Pluto with an FPGA image having an incompatible register map.
 When you clone this repo, copy `msk_top_regs.h` from the HDL build repo
 you will be working with.)
 
-4. The application code can build several different versions, depending on the
+4. The streaming test code in `opulent_voice.c` can build several different versions, depending on the
 definition of preprocessor symbols such as `RF_LOOPBACK` and `RX_ACTIVE` and
-`OPV_FRAME_MODE`. On the command line shown above, I'm assuming none of those
-symbols is defined in the source code. We define the ones we want on the command
-line with the `-D` flag.
+`OPV_FRAME_MODE`. None of these should be #defined in the source code.
+We define the ones we want on the command line with the `-D` flag.
 
 5. You don't have to build two versions on the same command line as shown here.
 That's just a convenience for the case we are dealing with as I write this:
