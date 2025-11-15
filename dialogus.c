@@ -1320,18 +1320,62 @@ void stop_periodic_statistics_reporter(void) {
 // from the modem, encapsulate them for network transmission, and
 // forward them along without delay.
 //
-// The IIO objects have already been created and configured appropriately.
+// libiio is not thread-safe. Recommended solution is to clone the context
+// and re-create everything in the cloned context. They have already been
+// appropriately configured in main.
 //
+
+struct iio_buffer *rx_buf;
+
 void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	uint32_t refill_ts_base;
 	ssize_t nbytes_rx;
 	uint8_t received_frame[OVP_DEMOD_FRAME_SIZE];
 	uint8_t decoded_frame[OVP_SINGLE_FRAME_SIZE];
+	
+	struct iio_context *rx_ctx;
+	struct iio_device *rx_dev;
+	struct iio_channel *rx_ch_i, *rx_ch_q;
+
+	rx_ctx = iio_context_clone(ctx);
+	if (!rx_ctx) {
+		printf("Failed to create receive context\n");
+		cleanup_and_exit();
+	}
+
+	// set the timeout to infinity; we may need to wait any length of time
+	// before the first frame of a transmission is received, so we need the
+	// receive buffer_refill to never time out.
+	int ret = iio_context_set_timeout(rx_ctx, 0);
+	if (ret < 0) {
+			char timeout_test[256];
+			iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
+			printf("* rx_ctx set_timeout failed : %s\n", timeout_test);
+	} else {
+			printf("* rx_ctx set_timeout returned %d, which is a success.\n", ret);
+	}
+
+
+	// Find the SAME devices/channels (already configured by main)
+	rx_dev = iio_context_find_device(rx_ctx, "cf-ad9361-lpc");
+	rx_ch_i = iio_device_find_channel(rx_dev, "voltage0", RX);
+	rx_ch_q = iio_device_find_channel(rx_dev, "voltage1", RX);
+
+	// Enable channels in THIS context
+	iio_channel_enable(rx_ch_i);
+	iio_channel_enable(rx_ch_q);
+
+	rx_buf = iio_device_create_buffer(rx_dev, OVP_DEMOD_FRAME_SIZE, false);
+	if (!rx_buf) {
+		perror("Could not create RX buffer");
+		cleanup_and_exit();
+	}
+
 
 	while(!stop) {
 		// Refill RX buffer
 		refill_ts_base = get_timestamp_ms();
-		nbytes_rx = iio_buffer_refill(rxbuf);
+		nbytes_rx = iio_buffer_refill(rx_buf);
 		if (nbytes_rx < 0) {
 				if (nbytes_rx == -ETIMEDOUT) {
 					printf("Refill timeout (no sync word yet?)\n");
@@ -1349,10 +1393,10 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 			}
 
 			// make a copy of the received data, removing IIO padding
-			ptrdiff_t p_inc = iio_buffer_step(rxbuf);
-			char *p_end = iio_buffer_end(rxbuf);
+			ptrdiff_t p_inc = iio_buffer_step(rx_buf);
+			char *p_end = iio_buffer_end(rx_buf);
 			uint8_t *p_out = received_frame;
-			for (char *p_dat = (char *)iio_buffer_first(rxbuf, rx0_i); p_dat < p_end; p_dat += p_inc) {
+			for (char *p_dat = (char *)iio_buffer_first(rx_buf, rx0_i); p_dat < p_end; p_dat += p_inc) {
 				*p_out++ = ((int16_t*)p_dat)[0] & 0x00ff;
 			}
 
@@ -1393,6 +1437,9 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 		}
 	}
 
+	iio_buffer_destroy(rx_buf);
+	iio_context_destroy(rx_ctx);
+
 	printf("OVP: receiver thread exiting\n");
 	return NULL;
 }
@@ -1427,8 +1474,8 @@ int start_ovp_receiver(void) {
 // Stop OVP receiver thread
 void stop_ovp_receiver(void) {
 	if (ovp_rx_thread) {
-		if (rxbuf) {
-			iio_buffer_cancel(rxbuf);
+		if (rx_buf) {
+			iio_buffer_cancel(rx_buf);
 		}
 		pthread_cancel(ovp_rx_thread);
 	}
@@ -1592,13 +1639,7 @@ int main (int argc, char **argv)
 				printf("* set_timeout returned %d, which is a success.\n", ret);
 		}
 
-	printf("* Creating IIO buffers, size %d\n", OVP_MODULATOR_FRAME_SIZE);
-	rxbuf = iio_device_create_buffer(rx, OVP_DEMOD_FRAME_SIZE, false);
-	if (!rxbuf) {
-		perror("Could not create RX buffer");
-		cleanup_and_exit();
-	}
-
+	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
