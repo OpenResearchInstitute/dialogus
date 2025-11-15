@@ -188,6 +188,9 @@ void decode_ovp_payload(uint8_t *input, uint8_t *output);
 void create_dummy_frame(void);
 void create_postamble_frame(void);
 void stop_debug_thread(void);
+void dump_bytes(char *name, uint8_t *buf, size_t length);
+void dump_buffer(char *name, struct iio_buffer *buf);
+
 
 /* Register addresses for using the hardware timer */
 #define PERIPH_BASE 0xf8f00000
@@ -235,7 +238,7 @@ unsigned int write_mapped_reg(unsigned int *virtual_addr, int offset, unsigned i
 // power = capture_and_read_msk(OFFSET_MSK(rx_power));
 uint32_t capture_and_read_msk(size_t offset) {
 	volatile uint32_t *reg_ptr;
-	volatile uint32_t dummy_read;
+	volatile uint32_t dummy_read __attribute__((unused));
 	
 	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
 
@@ -509,7 +512,7 @@ void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
 }
 
 // Send OVP frame data to MSK modulator via IIO buffer in two steps.
-// Frame data should already be formatted with sync word + scrambling + FEC coding
+// Frame data should already be formatted with scrambling + FEC coding
 // or filled out as a special (preamble/postamble/dummy) frame.
 // Step 1: move the data into txbuf using iio calls
 // (Step 2: iio_push txbuf to the kernel)
@@ -525,20 +528,29 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 		return -1;
 	}
 	
-	printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+	printf("OVP: Sending %zu bytes to MSK modulator:", frame_size);
+	for (size_t i=0; i < frame_size; i++) {
+		printf("%02x ", frame_data[i]);
+	}
+	printf("\n");
 	
 	// Get buffer pointers and step size
 	char *p_dat, *p_end;
-	ptrdiff_t p_inc = iio_buffer_step(txbuf);
-	p_end = iio_buffer_end(txbuf);
+	ptrdiff_t p_inc;
 	
+	p_inc = iio_buffer_step(txbuf);
+	p_end = iio_buffer_end(txbuf);
+	p_dat = (char *)iio_buffer_first(txbuf, tx0_i);
+	
+	printf("Loading txbuf with p_dat=%p p_end=%p, p_inc=%d: ", p_dat, p_end, p_inc);
+
 	// Track how much frame data we've sent
 	size_t frame_offset = 0;
 	
 	// Fill TX buffer with frame data bytes
 	// The MSK modulator expects raw data bytes, not I/Q samples
 	// It will internally convert to MSK I/Q modulation
-	for (p_dat = (char *)iio_buffer_first(txbuf, tx0_i); p_dat < p_end; p_dat += p_inc) {
+	for (/* p_dat above */; p_dat < p_end; p_dat += p_inc) {
 		if (frame_offset < frame_size) {
 			// Send frame byte as 16-bit data to MSK modulator
 			// MSK modulator expects data width configured in Tx_Data_Width register (32 bits)
@@ -555,13 +567,16 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 			((int16_t*)p_dat)[0] = (int16_t)(data_byte);	// Real (I) - lower byte
 			((int16_t*)p_dat)[1] = (int16_t)(0);			// Imag (Q)
 
+			printf("%02x ", data_byte);
 			frame_offset++;
 		} else {
 			// Pad with zeros if frame is shorter than buffer
 			((int16_t*)p_dat)[0] = 0;
 			((int16_t*)p_dat)[1] = 0;
+			printf("pad ");
 		}
 	}
+	printf("\n");
 
 	return 0;
 }
@@ -573,12 +588,10 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 int push_txbuf_to_msk(void) {
 
 	static uint32_t old_xfer_count = 0;
-	static uint32_t push_ts_base;
 	uint32_t local_ts_base;
 
 	local_ts_base = get_timestamp_ms();
 	// printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
-	push_ts_base = local_ts_base;
 	ssize_t result = iio_buffer_push(txbuf);
 	printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 
@@ -746,6 +759,8 @@ void create_dummy_frame(void) {
 		payload_computed = true;
 	}
 
+	dump_bytes("modulator_frame_buffer before dummy", modulator_frame_buffer, 268);
+
 	// We are taking advantage of the modulator_frame_buffer being global,
 	// and dummy frames always coming after normal frames that were built
 	// in the modulator_frame_buffer. We only need to change the payload.
@@ -756,12 +771,16 @@ void create_dummy_frame(void) {
 	// permits this behavior.
 	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
 	memcpy(p, modulator_dummy_payload, OVP_ENCODED_PAYLOAD_SIZE);
+
+	dump_bytes("modulator_frame_buffer after dummy", modulator_frame_buffer, 268);
 }
 
 void create_postamble_frame(void) {
 
 	static uint8_t modulator_postamble_payload[OVP_ENCODED_PAYLOAD_SIZE];
 	static bool payload_computed = false;
+
+	dump_bytes("modulator_frame_buffer before postamble", modulator_frame_buffer, 268);
 
 	// We are taking advantage of the fact that the payload of a postamble
 	// frame is always the same. Payload is fixed (copies of the barker-11
@@ -798,6 +817,9 @@ void create_postamble_frame(void) {
 	// handled by Interlocutor, not this program.
 	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
 	memcpy(p, modulator_postamble_payload, OVP_ENCODED_PAYLOAD_SIZE);
+
+	dump_bytes("modulator_frame_buffer after postamble", modulator_frame_buffer, 268);
+
 }
 
 
@@ -943,6 +965,9 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 	uint8_t encoded_payload[OVP_ENCODED_PAYLOAD_SIZE];
 	encode_ovp_payload(randomized_frame + OVP_HEADER_SIZE, encoded_payload);
 
+	dump_bytes("modulator_frame_buffer before real frame", modulator_frame_buffer, 268);
+
+
 	uint8_t *p = modulator_frame_buffer;
 
 	// Components of a transmitted OVP frame:
@@ -960,6 +985,8 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 
 	// apply interleaving to break up block errors at the decoder(s)
 	interleave_ovp_frame(modulator_frame_buffer);
+
+	dump_bytes("modulator_frame_buffer after real frame", modulator_frame_buffer, 268);
 
 	// The modulator_frame_buffer now contains the full modulator frame
 	// ready for transmission via MSK modulator
@@ -1066,7 +1093,8 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 					ntohs(udp_client_addr.sin_port),
 					recv_ts - last_recv_ts);
 			last_recv_ts = recv_ts;
-			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
+//!!!			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
+			for (int i=0; i<OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", ovp_frame_buffer[i]);
 			}
 			printf("\n");
@@ -1128,6 +1156,31 @@ void stop_ovp_listener(void) {
 	}
 }
 
+void dump_bytes(char *name, uint8_t *buf, size_t length) {
+	printf("%s: ", name);
+
+	for (size_t i=0; i < length; i++) {
+		printf("%02x ", buf[i]);
+	}
+
+	printf("\n");
+}
+
+void dump_buffer(char *name, struct iio_buffer *buf) {
+	printf("%s: ", name);
+
+	printf("@%p-> ", buf);
+	ptrdiff_t p_inc = iio_buffer_step(buf);
+	char *p_end = iio_buffer_end(buf);
+	char *first = (char *)iio_buffer_first(buf, rx0_i);
+	for (char *p_dat = first; p_dat < p_end; p_dat += p_inc) {
+		printf("%02x ", ((int16_t*)p_dat)[0] & 0x00ff);
+	}
+
+	printf("\n");
+}
+	
+
 // OVP Timeline Manager thread
 // Wakes up at each frame decision time (Td) during an active session
 // and sends a frame. In priority order:
@@ -1148,6 +1201,7 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 				// printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
 					if (ovp_txbufs_this_frame > 0) {
+						// We've already put a real frame into txbuf at this point
 						if (ovp_txbufs_this_frame > 1) {
 							ovp_untimely_frames += ovp_txbufs_this_frame - 1;
 							printf("timeline @ %lld: frame + %d untimely frames ", get_timestamp_us() - session_T0, ovp_txbufs_this_frame - 1);
@@ -1171,10 +1225,14 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 							hang_time_dummy_count++;
 							hang_timer_active = 1;
 						}
+						process_ovp_payload_software(modulator_frame_buffer, sizeof(modulator_frame_buffer));
+						load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
 					}
 					local_ts_base = get_timestamp_ms();
+					dump_buffer("txbuf before", txbuf);
 					iio_buffer_push(txbuf);
 					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					dump_buffer("txbuf after", txbuf);
 					decision_time += 40e3;
 					ovp_txbufs_this_frame = 0;
 				}
@@ -1396,12 +1454,13 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 			ptrdiff_t p_inc = iio_buffer_step(rx_buf);
 			char *p_end = iio_buffer_end(rx_buf);
 			uint8_t *p_out = received_frame;
-			for (char *p_dat = (char *)iio_buffer_first(rx_buf, rx0_i); p_dat < p_end; p_dat += p_inc) {
+			char *first = (char *)iio_buffer_first(rx_buf, rx0_i);
+			for (char *p_dat = first; p_dat < p_end; p_dat += p_inc) {
 				*p_out++ = ((int16_t*)p_dat)[0] & 0x00ff;
 			}
 
 			// dump received buffer for visual check
-			printf("Received raw data: ");
+			printf("Received raw data @ %p: ", first);
 			for (int i=0; i < OVP_DEMOD_FRAME_SIZE; i++) {
 				printf("%02x ", received_frame[i]);
 			}
