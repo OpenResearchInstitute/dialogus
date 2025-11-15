@@ -10,7 +10,6 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <iio.h>
 #include <math.h>
 #include <netinet/in.h>
@@ -20,11 +19,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <sys/socket.h>
 #include <termios.h>
 #include <unistd.h>
 
+#include "registers.h"
 
 /* helper macros */
 #define MHZ(x) ((long long)(x*1000000.0 + .5))
@@ -70,19 +69,6 @@
 
 #define TX_SYNC_CTRL_WORD 0x00000000
 #define TX_SYNC_COUNT (54200 * 20)	// long preamble for test detection
-
-// Offsets into either DMAC (TX or RX) for registers in that block.
-// All the registers are defined in /hdl/library/axi_dmac/index.html
-#define DMAC_PERIPHERAL_ID 0x0004
-#define DMAC_SCRATCH 0x0008
-#define DMAC_INTERFACE_DESCRIPTION_1 0x0010
-#define DMAC_IRQ_MASK 0x0080
-#define DMAC_IRQ_PENDING 0x0084
-#define DMAC_IRQ_SOURCE 0x0088
-#define DMAC_FLAGS 0x040c
-
-// For the MSK registers, we use RDL headers
-#include "msk_top_regs.h"
 
 
 //-=-=-=-=-=-=-= GLOBAL VARIABLES -=-=-=-=-=-=-=-=
@@ -192,71 +178,6 @@ void dump_bytes(char *name, uint8_t *buf, size_t length);
 void dump_buffer(char *name, struct iio_buffer *buf);
 
 
-/* Register addresses for using the hardware timer */
-#define PERIPH_BASE 0xf8f00000
-#define GLOBAL_TMR_UPPER_OFFSET 0x0204
-#define GLOBAL_TMR_LOWER_OFFSET 0x0200
-/* Global Timer runs on the CPU clock, divided by 2 */
-#define COUNTS_PER_SECOND (666666687 / 2 / 2)
-static uint32_t *timer_register_map;
-/* Collect telementry and make decisions after this duration */
-#define REPORTING_INTERVAL (COUNTS_PER_SECOND / 1000)
-
-
-//read from a memory mapped register
-unsigned int read_mapped_reg(unsigned int *virtual_addr, int offset)
-{
-		return virtual_addr[offset>>2];
-}
-
-// Addresses of the DMACs via their AXI lite control interface register blocks
-unsigned int *tx_dmac_register_map;
-unsigned int *rx_dmac_register_map;
-
-// Address of the MSK block via its AXI lite control interface register block
-static msk_top_regs_t *msk_register_map = NULL;
-
-//read a value from the MSK register
-//value = READ_MSK(MSK_Init);
-#define READ_MSK(offset) (msk_register_map->offset)
-
-//write to a memory mapped register
-unsigned int write_mapped_reg(unsigned int *virtual_addr, int offset, unsigned int value)
-{
-	virtual_addr[offset>>2] = value;
-	return 0;
-}
-
-//from devmem in sbin, we know: read_result = *(volatile uint32_t*)virt_addr;
-//write a value to an MSK register
-//WRITE_MSK(MSK_Init, 0x00000001);
-#define WRITE_MSK(offset, value) *(volatile uint32_t*)&(msk_register_map->offset) = value
-
-// Some registers require synchronization across clock domains.
-// This is implemented by first writing (any value) and then reading the register.
-// The current value is captured, triggered by the write, and can then be read safely.
-// power = capture_and_read_msk(OFFSET_MSK(rx_power));
-uint32_t capture_and_read_msk(size_t offset) {
-	volatile uint32_t *reg_ptr;
-	volatile uint32_t dummy_read __attribute__((unused));
-	
-	reg_ptr = (volatile uint32_t *)((char *)msk_register_map + offset);
-
-	// write to capture
-	*reg_ptr = 0xDEADBEEF;	// write a distinctive value in case it shows up in a read
-
-	// Trusting that the CPU is slow enough to make this safe across clock domains
-	// without any artificial delay here.
-	// or maybe not!!!
-	dummy_read = *reg_ptr;
-
-	// read actual value
-	return *reg_ptr;
-}
-
-//get the address offset of an MSK register
-//value = OFFSET_MSK(MSK_Init);
-#define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
 
 // Timestamp facility, hardware locked to the sample clock
 uint64_t get_timestamp(void) {
@@ -1679,36 +1600,10 @@ int main (int argc, char **argv)
 		cleanup_and_exit();
 	}
 
-	printf("Setting for memory-mapped registers in the PL.\n");
-	int ddr_memory = open("/dev/mem", O_RDWR | O_SYNC);
-	// Memory map the address of the TX-DMAC via its AXI lite control interface register block
-	tx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c420000);
-	// Memory map the address of the RX-DMAC via its AXI lite control interface register block
-	rx_dmac_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x7c400000);
-	// Memory map the address of the MSK block via its AXI lite control interface
-	msk_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, 0x43c00000);
-	// Memory map the address of the peripherals block so we can use the hardware timer
-	timer_register_map = mmap(NULL, 65535, PROT_READ | PROT_WRITE, MAP_SHARED, ddr_memory, PERIPH_BASE);
-	if (timer_register_map == MAP_FAILED) {
-		printf("Failed top map timer registers\n");
-		close(ddr_memory);
-		exit(1);
+	if (init_register_access() != 0) {
+		perror("Register access setup failed");
+		cleanup_and_exit();
 	}
-
-	unsigned int interface = read_mapped_reg(tx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
-	printf("TX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
-	interface = read_mapped_reg(rx_dmac_register_map, DMAC_INTERFACE_DESCRIPTION_1);
-	printf("RX DMAC Interface Description (0x%08x@0x%04x)\n", interface, DMAC_INTERFACE_DESCRIPTION_1);
-
-	printf("Writing to scratch register in TX-DMAC.\n");
-	write_mapped_reg(tx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
-	printf("Reading from scratch register in TX-DMAC. We see: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
-	printf("Reading the TX-DMAC peripheral ID: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
-	printf("Writing to scratch register in RX-DMAC.\n");
-	write_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
-	printf("Reading from scratch register in RX-DMAC. We see: (0x%08x@%04x)\n", read_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
-	printf("Reading the RX-DMAC peripheral ID: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
-
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Configure MSK for minimum viable product test.\n");
