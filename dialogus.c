@@ -528,11 +528,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 		return -1;
 	}
 	
-	printf("OVP: Sending %zu bytes to MSK modulator:", frame_size);
-	for (size_t i=0; i < frame_size; i++) {
-		printf("%02x ", frame_data[i]);
-	}
-	printf("\n");
+	printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
 	
 	// Get buffer pointers and step size
 	char *p_dat, *p_end;
@@ -542,8 +538,6 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 	p_end = iio_buffer_end(txbuf);
 	p_dat = (char *)iio_buffer_first(txbuf, tx0_i);
 	
-	printf("Loading txbuf with p_dat=%p p_end=%p, p_inc=%d: ", p_dat, p_end, p_inc);
-
 	// Track how much frame data we've sent
 	size_t frame_offset = 0;
 	
@@ -567,16 +561,13 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 			((int16_t*)p_dat)[0] = (int16_t)(data_byte);	// Real (I) - lower byte
 			((int16_t*)p_dat)[1] = (int16_t)(0);			// Imag (Q)
 
-			printf("%02x ", data_byte);
 			frame_offset++;
 		} else {
 			// Pad with zeros if frame is shorter than buffer
 			((int16_t*)p_dat)[0] = 0;
 			((int16_t*)p_dat)[1] = 0;
-			printf("pad ");
 		}
 	}
-	printf("\n");
 
 	return 0;
 }
@@ -759,8 +750,6 @@ void create_dummy_frame(void) {
 		payload_computed = true;
 	}
 
-	dump_bytes("modulator_frame_buffer before dummy", modulator_frame_buffer, 268);
-
 	// We are taking advantage of the modulator_frame_buffer being global,
 	// and dummy frames always coming after normal frames that were built
 	// in the modulator_frame_buffer. We only need to change the payload.
@@ -771,16 +760,12 @@ void create_dummy_frame(void) {
 	// permits this behavior.
 	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
 	memcpy(p, modulator_dummy_payload, OVP_ENCODED_PAYLOAD_SIZE);
-
-	dump_bytes("modulator_frame_buffer after dummy", modulator_frame_buffer, 268);
 }
 
 void create_postamble_frame(void) {
 
 	static uint8_t modulator_postamble_payload[OVP_ENCODED_PAYLOAD_SIZE];
 	static bool payload_computed = false;
-
-	dump_bytes("modulator_frame_buffer before postamble", modulator_frame_buffer, 268);
 
 	// We are taking advantage of the fact that the payload of a postamble
 	// frame is always the same. Payload is fixed (copies of the barker-11
@@ -817,9 +802,6 @@ void create_postamble_frame(void) {
 	// handled by Interlocutor, not this program.
 	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
 	memcpy(p, modulator_postamble_payload, OVP_ENCODED_PAYLOAD_SIZE);
-
-	dump_bytes("modulator_frame_buffer after postamble", modulator_frame_buffer, 268);
-
 }
 
 
@@ -965,9 +947,6 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 	uint8_t encoded_payload[OVP_ENCODED_PAYLOAD_SIZE];
 	encode_ovp_payload(randomized_frame + OVP_HEADER_SIZE, encoded_payload);
 
-	dump_bytes("modulator_frame_buffer before real frame", modulator_frame_buffer, 268);
-
-
 	uint8_t *p = modulator_frame_buffer;
 
 	// Components of a transmitted OVP frame:
@@ -985,8 +964,6 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 
 	// apply interleaving to break up block errors at the decoder(s)
 	interleave_ovp_frame(modulator_frame_buffer);
-
-	dump_bytes("modulator_frame_buffer after real frame", modulator_frame_buffer, 268);
 
 	// The modulator_frame_buffer now contains the full modulator frame
 	// ready for transmission via MSK modulator
@@ -1093,8 +1070,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 					ntohs(udp_client_addr.sin_port),
 					recv_ts - last_recv_ts);
 			last_recv_ts = recv_ts;
-//!!!			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
-			for (int i=0; i<OVP_SINGLE_FRAME_SIZE; i++) {
+			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", ovp_frame_buffer[i]);
 			}
 			printf("\n");
@@ -1229,10 +1205,8 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 						load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
 					}
 					local_ts_base = get_timestamp_ms();
-					dump_buffer("txbuf before", txbuf);
 					iio_buffer_push(txbuf);
 					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
-					dump_buffer("txbuf after", txbuf);
 					decision_time += 40e3;
 					ovp_txbufs_this_frame = 0;
 				}
