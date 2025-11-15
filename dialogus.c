@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "registers.h"
+#include "statistics.h"
 
 /* helper macros */
 #define MHZ(x) ((long long)(x*1000000.0 + .5))
@@ -83,20 +84,17 @@ pthread_t ovp_debug_thread;
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 // OVP UDP Interface
 static int ovp_udp_socket = -1;
-static volatile int ovp_transmission_active = 0;
+volatile int ovp_transmission_active = 0;
 static struct sockaddr_in ovp_listen_addr;
 static pthread_t ovp_udp_thread;
 static volatile int ovp_running = 0;
-static pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
+pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
 static bool encapsulated_frame_host_known = false;
 
 // UDP connection used for encapsulated frame packets in both direction
 static struct sockaddr_in udp_client_addr;
 static socklen_t udp_client_len;
 static ssize_t udp_bytes_received;
-
-// OVP periodic reporting
-static pthread_t ovp_reporter_thread;
 
 // OVP transmit timeline manager
 int64_t decision_time = 0;		// us timestamp after which a new frame is late
@@ -107,10 +105,10 @@ static pthread_mutex_t tls_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // OVP transmit session management variables
 static unsigned char active_station_id_binary[6] = {0,0,0,0,0,0};
-static char active_station_id_ascii[11] = "";	// 10 chars + null terminator is max possible
-static int hang_timer_active = 0;
-static int dummy_frames_sent = 0;	// Count of dummy frames sent in this hang time
-static int hang_timer_frames = 25;	// Number of dummy frames before ending session
+char active_station_id_ascii[11] = "";	// 10 chars + null terminator is max possible
+int hang_timer_active = 0;
+int dummy_frames_sent = 0;	// Count of dummy frames sent in this hang time
+int hang_timer_frames = 25;	// Number of dummy frames before ending session
 static uint32_t session_ts_base = 0;	// timestamp at start of a session
 static int64_t session_T0 = 0;	// Origin of time for this session (microseconds)
 
@@ -146,14 +144,6 @@ static uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
 // OVP receiver thread
 static pthread_t ovp_rx_thread;
 
-// OVP Statistics
-static uint64_t ovp_frames_received = 0;
-static uint64_t ovp_frames_processed = 0;
-static uint64_t ovp_frame_errors = 0;
-static uint64_t ovp_sessions_started = 0;
-static uint64_t ovp_sessions_ended = 0;
-static uint64_t ovp_dummy_frames_sent = 0;
-static uint64_t ovp_untimely_frames = 0;
 
 // Opulent Voice Protocol functions
 void start_transmission_session(void);
@@ -236,7 +226,7 @@ static struct iio_channel *tx0_q = NULL;
 static struct iio_buffer  *rxbuf = NULL;
 static struct iio_buffer  *txbuf = NULL;
 
-static bool stop;
+bool stop = false;
 
 /* cleanup and exit */
 static void cleanup_and_exit(void)
@@ -1173,68 +1163,6 @@ void stop_timeline_manager(void) {
 	printf("OVP: Timeline manager stopped\n");
 }
 
-
-void print_ovp_statistics(void) {
-	printf("\n=== OVP Statistics ===\n");
-	printf("Frames received:     %llu\n", (unsigned long long)ovp_frames_received);
-	printf("Frames processed:    %llu\n", (unsigned long long)ovp_frames_processed);
-	printf("Frame errors:        %llu\n", (unsigned long long)ovp_frame_errors);
-	printf("Untimely frames:     %llu\n", (unsigned long long)ovp_untimely_frames);
-	printf("Dummy frames sent:   %llu\n", (unsigned long long)ovp_dummy_frames_sent);
-	printf("Sessions started:    %llu\n", (unsigned long long)ovp_sessions_started);
-	printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
-	printf("Active session:      %s\n", ovp_transmission_active ? "YES" : "NO");
-	if (ovp_transmission_active) {
-		printf("Active station ID:   %s\n", active_station_id_ascii);
-	}
-	printf("Hang timer active:   %s\n", hang_timer_active ? "YES" : "NO");
-	if (hang_timer_active) {
-		printf("Dummy frames sent:   %d/%d (for %s)\n", 
-				dummy_frames_sent, hang_timer_frames, active_station_id_ascii);
-	}
-	if (ovp_frames_received > 0) {
-		printf("Success rate:        %.1f%%\n", 
-			(double)ovp_frames_processed / ovp_frames_received * 100.0);
-	}
-	printf("======================\n");
-}
-
-// OVP Periodic Statistics Reporter thread
-// Wakes up at intervals of about 10 seconds and print a report.
-void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg) {
-	while (!stop) {
-		pthread_mutex_lock(&timeline_lock);
-		print_ovp_statistics();
-		pthread_mutex_unlock(&timeline_lock);
-		// don't sleep all at once; makes exiting the program too slow.
-		for (int i=0; i < 100; i++) {
-			usleep(100e3);	// 100 iterations of 100ms = 10 seconds
-			if (stop) {
-				break;
-			}
-		}
-	}
-	printf("OVP: Periodic reporter thread exiting\n");
-	return NULL;
-}
-
-int start_periodic_statistics_reporter(void) {
-	if (pthread_create(&ovp_reporter_thread, NULL, ovp_periodic_statistics_reporter_thread, NULL) != 0) {
-		perror("OVP: Failed to create periodic statistics reporter thread");
-		return -1;
-	}
-	
-	printf("OVP: Reporter started successfully\n");
-	return 0;
-}
-
-void stop_periodic_statistics_reporter(void) {
-	if (ovp_reporter_thread) {
-		pthread_cancel(ovp_reporter_thread);
-	}
-		
-	printf("OVP: Reporter stopped\n");
-}
 
 
 // Receiver thread
