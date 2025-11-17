@@ -15,7 +15,7 @@ uint64_t ovp_sessions_ended = 0;
 uint64_t ovp_dummy_frames_sent = 0;
 uint64_t ovp_untimely_frames = 0;
 extern volatile int ovp_transmission_active;
-extern char *active_station_id_ascii;
+extern char active_station_id_ascii[];
 extern int hang_timer_active;
 extern int dummy_frames_sent;
 extern int hang_timer_frames;
