@@ -63,9 +63,6 @@
 
 // one bit time is 19 microseconds
 float num_microseconds = 5*20;
-float one_bit_time = 19;
-float percent_error = 55.0;
-pthread_t ovp_debug_thread;
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 // OVP UDP Interface
@@ -116,7 +113,6 @@ void abort_transmission_session(void);
 void stop_ovp_listener(void);
 void stop_timeline_manager(void);
 void stop_periodic_statistics_reporter(void);
-void stop_ovp_receiver(void);
 int enable_msk_transmission(void);
 int disable_msk_transmission(void);
 int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size);
@@ -299,7 +295,7 @@ void print_rssi(void) {
 	if (my_dev_ch == NULL) {
 		my_dev_ch = iio_device_find_channel(get_ad9361_phy(),"voltage0", false);
 	}
-	
+
 	int ret = iio_channel_attr_read(my_dev_ch, "rssi", rssi_buffer, sizeof(rssi_buffer));
 	if (ret < 0) {
 		char rssi_error[256];
@@ -321,9 +317,9 @@ void print_rssi(void) {
 void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
 {
 	static const char callsign_map[] = "xABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.";
-	
+
 	char result[11];
-	
+
 	uint64_t numeric_id = ((uint64_t)encoded[0] << 40) \
 						+ ((uint64_t)encoded[1] << 32) \
 						+ ((uint64_t)encoded[2] << 24) \
@@ -355,25 +351,25 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 		printf("OVP: Error - TX buffer not initialized\n");
 		return -1;
 	}
-	
+
 	if (!frame_data || frame_size != OVP_MODULATOR_FRAME_SIZE) {
 		printf("OVP: Error - invalid frame data\n");
 		return -1;
 	}
-	
+
 	printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
-	
+
 	// Get buffer pointers and step size
 	char *p_dat, *p_end;
 	ptrdiff_t p_inc;
-	
+
 	p_inc = iio_buffer_step(txbuf);
 	p_end = iio_buffer_end(txbuf);
 	p_dat = (char *)iio_buffer_first(txbuf, tx0_i);
-	
+
 	// Track how much frame data we've sent
 	size_t frame_offset = 0;
-	
+
 	// Fill TX buffer with frame data bytes
 	// The MSK modulator expects raw data bytes, not I/Q samples
 	// It will internally convert to MSK I/Q modulation
@@ -423,11 +419,11 @@ int push_txbuf_to_msk(void) {
 		printf("OVP: Error pushing buffer to MSK: %zd\n", result);
 		return -1;
 	}
-	
+
 	// Check that data is flowing to MSK block
 	uint32_t new_xfer_count = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
 	uint32_t delta = new_xfer_count - old_xfer_count;
-	
+
 	printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
 	printf("OVP: Current axis_xfer_count: %u\n", new_xfer_count);
 	old_xfer_count = new_xfer_count;
@@ -438,13 +434,13 @@ int push_txbuf_to_msk(void) {
 // Enable PTT and start MSK transmission
 int enable_msk_transmission(void) {
 	WRITE_MSK(MSK_Control, 0x00000001);	// PTT on, loopback off
-	
+
 	// Small delay to let hardware settle
 	usleep(1000);
-	
+
 	uint32_t status = READ_MSK(MSK_Status);
 	printf("OVP: MSK_Status after PTT enable: 0x%08x\n", status);
-	
+
 	return 0;
 }
 
@@ -453,10 +449,10 @@ int enable_msk_transmission(void) {
 int disable_msk_transmission(void) {
 	printf("timeline @ %lld: Disabling MSK transmission (PTT OFF)\n", get_timestamp_us() - session_T0);
 	WRITE_MSK(MSK_Control, 0x00000000);	// PTT off
-	
+
 	uint32_t status = READ_MSK(MSK_Status);
 	printf("OVP: MSK_Status after PTT disable: 0x%08x\n", status);
-	
+
 	return 0;
 }
 
@@ -474,7 +470,7 @@ void start_transmission_session(void) {
 	if (ovp_transmission_active) {	// should never happen
 		return;	// Session already active
 	}
-	
+
 	printf("OVP: Starting transmission session for station %s\n", active_station_id_ascii);
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
@@ -483,20 +479,17 @@ void start_transmission_session(void) {
 
 	// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
 	uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
-	
+
 	// Fill with 1100 repeating pattern (0xCC = 11001100 binary)
 	for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
 		preamble_frame[i] = 0xCC;	// 1100 1100 repeating
 	}
-	
+
 	// Send preamble to MSK modulator (pure bit pattern, no framing)
 	printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
 	load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
-	printf("preamble loaded!\n");
 	enable_msk_transmission();
-	printf("transmission enabled!\n");
 	push_txbuf_to_msk();
-	printf("preamble pushed!\n");
 
 	ovp_transmission_active = 1;
 	ovp_sessions_started++;
@@ -504,8 +497,6 @@ void start_transmission_session(void) {
 	// Inform the timeline manager to start managing the session
 	pthread_cond_signal(&timeline_start);
 
-	printf("T0 = %lld\n", session_T0);
-	printf("Td = %lld\n", decision_time);
 	return;
 }
 
@@ -522,7 +513,7 @@ void end_transmission_session_normally(void) {
 	// which should work provided the timeline is working as designed.
 	usleep(65000);
 	disable_msk_transmission();
-	
+
 	ovp_transmission_active = 0;
 	ovp_sessions_ended++;
 	hang_timer_active = 0;
@@ -541,7 +532,7 @@ void abort_transmission_session(void) {
 	}
 
 	disable_msk_transmission();
-	
+
 	if (ovp_transmission_active) {
 		ovp_sessions_ended++;
 	}
@@ -626,6 +617,7 @@ void create_postamble_frame(void) {
 		payload_computed = true;
 	}
 
+	//!!! DOES THIS WORK with scrambling, etc? 
 	// We are taking advantage of the modulator_frame_buffer being global,
 	// and the postamble frame always coming after other frames that were built
 	// in the modulator_frame_buffer. We only need to change the payload.
@@ -652,11 +644,11 @@ int init_udp_socket(void) {
 		perror("OVP: Failed to create UDP socket");
 		return -1;
 	}
-	
+
 	// Set socket options
-	int opt = 1;
+	int opt = 1;	// allow reuse of local addresses
 	if (setsockopt(ovp_udp_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-		perror("OVP: Failed to set socket options");
+		perror("OVP: Failed to set socket option");
 		close(ovp_udp_socket);
 		return -1;
 	}
@@ -666,7 +658,7 @@ int init_udp_socket(void) {
 	ovp_listen_addr.sin_family = AF_INET;
 	ovp_listen_addr.sin_addr.s_addr = INADDR_ANY;
 	ovp_listen_addr.sin_port = htons(OVP_UDP_PORT);
-	
+
 	// Bind socket
 	if (bind(ovp_udp_socket, (struct sockaddr*)&ovp_listen_addr, sizeof(ovp_listen_addr)) < 0) {
 		perror("OVP: Failed to bind UDP socket");
@@ -699,18 +691,18 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 		printf("OVP: Frame too short (%zu bytes)\n", frame_size);
 		return -1;
 	}
-	
-	// Check magic bytes (0xBBAADD)
+
+	// Check magic bytes (0xBBAADD) (dummy for authentication token check)
 	uint32_t magic = (frame_data[6] << 16) | (frame_data[7] << 8) | frame_data[8];
 	if (magic != OVP_MAGIC_BYTES) {
 		printf("OVP: Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
 		return -1;
 	}
-	
+
 	// Additional validation could go here:
 	// - Station ID validation (base-40 encoding)
 	// - Authentication token check
-	
+
 	return 0;
 }
 
@@ -761,7 +753,7 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 
 // Complete processing and send an OVP frame to MSK modulator
 int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) {
-	
+
 	// Process the frame (no preamble/postamble per frame)
 	int result;
 	result = process_ovp_payload_software(frame_data, frame_size);
@@ -774,13 +766,13 @@ int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) 
 		// Do not push_txbuf_to_msk() at this time. In case of overwrites,
 		// we want to transmit the last one only.
 	}
-	
+
 	if (result == 0) {
 		ovp_frames_processed++;
 	} else {
 		ovp_frame_errors++;
 	}
-	
+
 	return result;
 }
 
@@ -790,13 +782,13 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 	int result;
 
 	ovp_frames_received++;
-	
+
 	// Validate frame
 	if (validate_ovp_frame(frame_data, frame_size) < 0) {
 		ovp_frame_errors++;
 		return -1;
 	}
-	
+
 	// Extract and store station ID for regulatory compliance
 	memcpy(active_station_id_binary, frame_data, 6);	// Station ID length of 6 bytes
 	decode_station_id(active_station_id_binary, active_station_id_ascii);
@@ -845,20 +837,15 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 			break;
 		}
 		pthread_mutex_lock(&timeline_lock);
-		
+
 		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
-			//printf("OVP: Received %zd bytes from %s:%d\n", 
-			//			bytes_received,
-			//			inet_ntoa(client_addr.sin_addr),
-			//			ntohs(client_addr.sin_port));
-			
 			recv_ts = get_timestamp_ms();
 			printf("OVP: Received %zd bytes from %s:%d after %dms ending with ", udp_bytes_received,
 					inet_ntoa(udp_client_addr.sin_addr),
 					ntohs(udp_client_addr.sin_port),
 					recv_ts - last_recv_ts);
 			last_recv_ts = recv_ts;
-			for (int i=OVP_SINGLE_FRAME_SIZE-9; i<OVP_SINGLE_FRAME_SIZE; i++) {
+			for (int i=OVP_SINGLE_FRAME_SIZE - 9; i<OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", ovp_frame_buffer[i]);
 			}
 			printf("\n");
@@ -876,7 +863,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 		}
 		pthread_mutex_unlock(&timeline_lock);
 	}
-	
+
 	printf("OVP: UDP listener thread exiting\n");
 	return NULL;
 }
@@ -886,9 +873,9 @@ int start_ovp_listener(void) {
 	if (init_ovp_udp_listener() < 0) {
 		return -1;
 	}
-	
+
 	ovp_running = 1;
-	
+
 	if (pthread_create(&ovp_udp_thread, NULL, ovp_udp_listener_thread, NULL) != 0) {
 		perror("OVP: Failed to create UDP thread");
 		close(ovp_udp_socket);
@@ -896,7 +883,7 @@ int start_ovp_listener(void) {
 		ovp_running = 0;
 		return -1;
 	}
-	
+
 	printf("OVP: Listener started successfully\n");
 	return 0;
 }
@@ -905,21 +892,21 @@ int start_ovp_listener(void) {
 void stop_ovp_listener(void) {
 	if (ovp_running) {
 		ovp_running = 0;
-		
+
 		// Close socket to unblock recvfrom in thread
 		if (ovp_udp_socket >= 0) {
 			close(ovp_udp_socket);
 			ovp_udp_socket = -1;
 		}
-		
+
 		if (ovp_udp_thread) {
 			pthread_cancel(ovp_udp_thread);
 		}
-		
+
 		printf("OVP: UDP listener stopped\n");
 	}
 }
-	
+
 
 // OVP Timeline Manager thread
 // Wakes up at each frame decision time (Td) during an active session
@@ -989,7 +976,7 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 			}
 
 		}
-		
+
 		printf("OVP: Timeline paused until next transmission\n");
 		pthread_cond_wait(&timeline_start, &tls_lock);
 	}
@@ -1003,7 +990,7 @@ int start_timeline_manager(void) {
 		perror("OVP: Failed to create timeline manager thread");
 		return -1;
 	}
-	
+
 	printf("OVP: Timeline manager started successfully\n");
 	return 0;
 }
@@ -1015,7 +1002,6 @@ void stop_timeline_manager(void) {
 
 	printf("OVP: Timeline manager stopped\n");
 }
-
 
 
 
@@ -1107,12 +1093,12 @@ int main (int argc, char **argv)
 	// receive buffer_refill to never time out.
 	ret = iio_context_set_timeout(ctx, 0);
 		if (ret < 0) {
-				char timeout_test[256];
-				iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
-				printf("* set_timeout failed : %s\n", timeout_test);
+			char timeout_test[256];
+			iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
+			printf("* set_timeout failed : %s\n", timeout_test);
 		}
 		else {
-				printf("* set_timeout returned %d, which is a success.\n", ret);
+			printf("* set_timeout returned %d, which is a success.\n", ret);
 		}
 
 	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
@@ -1181,7 +1167,7 @@ int main (int argc, char **argv)
 	freq_if = IF_FREQUENCY;
 	tx_sample_rate = 61440000;
 	tx_rx_sample_ratio = 25;								// Rx downsampling implemented in FPGA
-	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;	// Rx effective sample rate
+	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;	// Rx effective sample rate (not used)
 
 	delta_f = bitrate/4;
 	f1 = freq_if - delta_f;
@@ -1286,7 +1272,7 @@ int main (int argc, char **argv)
 
 	//discard 24 receiver samples and 24 NCO Samples
 	WRITE_MSK(Rx_Sample_Discard, 0x00001818);
-		printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Read RX_SAMPLE_DISCARD: (0x%08x@%04x)\n", READ_MSK(Rx_Sample_Discard), OFFSET_MSK(Rx_Sample_Discard));
 	printf("bits 0:7 are receiver sample discard and bits 15:8 are NCO sample discard.\n");
 
@@ -1304,7 +1290,7 @@ int main (int argc, char **argv)
 	printf("Initial FIFOs at INIT: tx fifo: %08x rx fifo: %08x\n",
 							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
 							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
-	
+
 	printf("Rx DMAC FLAGS after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_FLAGS));
 	printf("Rx DMAC Irq_Mask after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_IRQ_MASK));
 
