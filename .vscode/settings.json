@@ -1,0 +1,26 @@
+{
+    "files.associations": {
+        "array": "c",
+        "ios": "c",
+        "receiver.h": "c"
+    },
+    "cSpell.words": [
+        "ADALM",
+        "altvoltage",
+        "convolutional",
+        "Deassert",
+        "deinterleave",
+        "demod",
+        "dialogus",
+        "downsampled",
+        "downsampling",
+        "libiio",
+        "PERIPH",
+        "postamble",
+        "PRBS",
+        "rssi",
+        "rxbuf",
+        "rxcfg",
+        "Skunkwrx"
+    ]
+}
