@@ -1,5 +1,5 @@
 
-
+#include <stdint.h>
 
 
 // Timestamp facility, hardware locked to the sample clock
