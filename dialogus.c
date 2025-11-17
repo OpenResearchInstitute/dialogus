@@ -1008,13 +1008,7 @@ void stop_timeline_manager(void) {
 // -=-=-=-=-=-=-=-=-=-= MAIN FUNCTION =-=-=-=-=-=-=-=-=-=-=-
 /* Configuration based on ADI's example for simple configuration and streaming */
 
-/* usage:
- * Default context, assuming local IIO devices, i.e., this script is run on ADALM-Pluto for example
- $./a.out
- * URI context, find out the uri by typing `iio_info -s` at the command line of the host PC
- $./a.out usb:x.x.x
- */
-int main (int argc, char **argv)
+int main (void)
 {
 	// Streaming devices
 	struct iio_device *tx;
@@ -1040,12 +1034,7 @@ int main (int argc, char **argv)
 	txcfg.rf_port = "A";	// port A (select for rf freq.)
 
 	printf("* Acquiring IIO context\n");
-	if (argc == 1) {
-		IIO_ENSURE((ctx = iio_create_default_context()) && "No context");
-	}
-	else if (argc == 2) {
-		IIO_ENSURE((ctx = iio_create_context_from_uri(argv[1])) && "No context");
-	}
+	IIO_ENSURE((ctx = iio_create_default_context()) && "No context");
 	IIO_ENSURE(iio_context_get_devices_count(ctx) > 0 && "No devices");
 
 	printf("* Acquiring AD9361 streaming devices\n");
