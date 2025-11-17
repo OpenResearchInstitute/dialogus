@@ -7,8 +7,8 @@
 
 #include "debugthread.h"
 #include "registers.h"
+#include "timestamp.h"
 
-extern uint32_t get_timestamp_ms(void);
 extern void print_rssi(void);
 
 // OVP debug thread mechanisms

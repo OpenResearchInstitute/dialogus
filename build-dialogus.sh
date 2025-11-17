@@ -4,4 +4,4 @@
 # To build the example script inside the provided container, use:
 #     docker run --platform=linux/amd64 --volume .:/repo build-application /bin/sh build-both-loopback-rx.sh
 
-arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -o dialogus dialogus.c registers.c statistics.c debugthread.c -lpthread -liio -lm -Wall -Wextra
+arm-linux-gnueabihf-gcc -mfloat-abi=hard --sysroot=$HOME/pluto-0.38.sysroot -g -o dialogus dialogus.c registers.c statistics.c debugthread.c timestamp.c -lpthread -liio -lm -Wall -Wextra
