@@ -99,6 +99,10 @@ The main forward path is now in `dialogus.c`, which implements
 the fully frame-oriented flow we intend to use for communicating
 with the MSK modulator in a realistic manner.
 
+Up through `opulent_voice.c` we had everything one monolithic
+file. Now we're in the process of splitting `dialogus.c` into
+modules contained in their own `.c` and `.h` files.
+
 ## Building the Application on Ubuntu (cross-platform)
 
 This worked for me on a fresh Ubuntu 24.10 VM created by OrbStack.
