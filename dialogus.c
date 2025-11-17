@@ -70,7 +70,7 @@
 #define OVP_DEMOD_PAYLOAD_OFFSET (OVP_ENCODED_HEADER_SIZE)
 
 #define TX_SYNC_CTRL_WORD 0x00000000
-#define TX_SYNC_COUNT (54200 * 20)	// long preamble for test detection
+#define TX_SYNC_COUNT 0	// not currently used
 
 
 //-=-=-=-=-=-=-= GLOBAL VARIABLES -=-=-=-=-=-=-=-=
