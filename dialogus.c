@@ -155,7 +155,6 @@ void stop_ovp_listener(void);
 void stop_timeline_manager(void);
 void stop_periodic_statistics_reporter(void);
 void stop_ovp_receiver(void);
-void print_ovp_statistics(void);
 int enable_msk_transmission(void);
 int disable_msk_transmission(void);
 int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size);
@@ -165,9 +164,6 @@ void decode_ovp_header(uint8_t *input, uint8_t *output);
 void decode_ovp_payload(uint8_t *input, uint8_t *output);
 void create_dummy_frame(void);
 void create_postamble_frame(void);
-void stop_debug_thread(void);
-void dump_bytes(char *name, uint8_t *buf, size_t length);
-void dump_buffer(char *name, struct iio_buffer *buf);
 
 
 /* RX is input from the antenna, TX is output to the antenna */
@@ -186,7 +182,7 @@ static char tmpstr[64];
 
 /* IIO structs required for streaming */
 static struct iio_context *ctx   = NULL;
-static struct iio_channel *rx0_i = NULL;
+	   struct iio_channel *rx0_i = NULL;
 static struct iio_channel *rx0_q = NULL;
 static struct iio_channel *tx0_i = NULL;
 static struct iio_channel *tx0_q = NULL;
@@ -1008,30 +1004,6 @@ void stop_ovp_listener(void) {
 		
 		printf("OVP: UDP listener stopped\n");
 	}
-}
-
-void dump_bytes(char *name, uint8_t *buf, size_t length) {
-	printf("%s: ", name);
-
-	for (size_t i=0; i < length; i++) {
-		printf("%02x ", buf[i]);
-	}
-
-	printf("\n");
-}
-
-void dump_buffer(char *name, struct iio_buffer *buf) {
-	printf("%s: ", name);
-
-	printf("@%p-> ", buf);
-	ptrdiff_t p_inc = iio_buffer_step(buf);
-	char *p_end = iio_buffer_end(buf);
-	char *first = (char *)iio_buffer_first(buf, rx0_i);
-	for (char *p_dat = first; p_dat < p_end; p_dat += p_inc) {
-		printf("%02x ", ((int16_t*)p_dat)[0] & 0x00ff);
-	}
-
-	printf("\n");
 }
 	
 
