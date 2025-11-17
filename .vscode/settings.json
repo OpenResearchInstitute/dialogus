@@ -22,5 +22,9 @@
         "rxbuf",
         "rxcfg",
         "Skunkwrx"
-    ]
+    ],
+    "cSpell.enabledFileTypes": {
+        "c": true,
+        "shellscript": false
+    }
 }
