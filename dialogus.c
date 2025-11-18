@@ -61,6 +61,20 @@
 //-=-=-=-=-=-=-= GLOBAL VARIABLES -=-=-=-=-=-=-=-=
 // Don't @ me bro! At least it's not GOTOs
 
+// If software_processing is true, this program converts between 134-byte logical frames
+// and 268-byte physical frames, exchanging the physical frames with the modem.
+// If software_processing is false, this program deals exclusively in 134-byte frames
+// and any logical-to-physical conversion is handled by the modem hardware.
+// This cannot currently be changed on the fly; it must be set before the
+// IIO buffers are created, and never changed.
+// We'll make this switchable separately for the transmitter and receiver.
+bool software_tx_processing = true;
+bool software_rx_processing = true;
+
+// We may someday be able to vary the duration of the preamble.
+// For now, let's assume it's always 40ms.
+uint32_t preamble_us = 40000;
+
 // one bit time is 19 microseconds
 float num_microseconds = 5*20;
 
@@ -103,6 +117,8 @@ static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
 // modulator. It's global to simplify the building of dummy frames
 // and postamble frames, which reuse the sync word and frame header
 // from the preceding Opulent Voice frames.
+// This buffer is sized for software processing; if we're not processing
+// frames in software, only the first half of the buffer is used.
 static uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
 
 
@@ -345,6 +361,7 @@ void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
 
 // Send OVP frame data to MSK modulator via IIO buffer in two steps.
 // Frame data should already be formatted with scrambling + FEC coding
+// (if software_tx_processing is enabled)
 // or filled out as a special (preamble/postamble/dummy) frame.
 // Step 1: move the data into txbuf using iio calls
 // (Step 2: iio_push txbuf to the kernel)
@@ -355,7 +372,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 		return -1;
 	}
 
-	if (!frame_data || frame_size != OVP_MODULATOR_FRAME_SIZE) {
+	if (!frame_data || frame_size != (software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE)) {
 		printf("OVP: Error - invalid frame data\n");
 		return -1;
 	}
@@ -438,7 +455,7 @@ int push_txbuf_to_msk(void) {
 int enable_msk_transmission(void) {
 	WRITE_MSK(MSK_Control, 0x00000001);	// PTT on, loopback off
 
-	// Small delay to let hardware settle
+	// Small delay to let hardware settle !!! do we need this?
 	usleep(1000);
 
 	uint32_t status = READ_MSK(MSK_Status);
@@ -478,21 +495,27 @@ void start_transmission_session(void) {
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
 	session_T0 = get_timestamp_us();	// used for timeline management
-	decision_time = session_T0 + 60e3;	// 60ms to the middle of the next frame, T0-referenced
+	decision_time = session_T0 + preamble_us + 20e3;	// time to the middle of the next frame, T0-referenced
 
-	// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
-	uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
+	if (software_tx_processing) {
+		// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
+		uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
 
-	// Fill with 1100 repeating pattern (0xCC = 11001100 binary)
-	for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
-		preamble_frame[i] = 0xCC;	// 1100 1100 repeating
+		// Fill with 1100 repeating pattern (0xCC = 11001100 binary)
+		for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
+			preamble_frame[i] = 0xCC;	// 1100 1100 repeating
+		}
+
+		// Send preamble to MSK modulator (pure bit pattern, no framing)
+		printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
+		load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
+		enable_msk_transmission();
+		push_txbuf_to_msk();
+	} else {
+		// If we're not doing software processing, assume that we're also not doing
+		// preamble generation. The modem will take care of it.
+		enable_msk_transmission();
 	}
-
-	// Send preamble to MSK modulator (pure bit pattern, no framing)
-	printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
-	load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
-	enable_msk_transmission();
-	push_txbuf_to_msk();
 
 	ovp_transmission_active = 1;
 	ovp_sessions_started++;
@@ -548,6 +571,8 @@ void abort_transmission_session(void) {
 		ovp_transmission_active = 0;
 	}
 }
+
+//!!! need to convert this for software_tx_processing switch
 
 //!!! DOES THIS WORK with randomizing and interleaving? Not sure.
 // Modify the frame leftover in modulator_frame_buffer to transform it
@@ -758,13 +783,18 @@ int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
 int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) {
 
 	// Process the frame (no preamble/postamble per frame)
-	int result;
-	result = process_ovp_payload_software(frame_data, frame_size);
+	int result = 0;
+
+	if (software_tx_processing) {
+		result = process_ovp_payload_software(frame_data, frame_size);
+	} else {
+		memcpy(modulator_frame_buffer, frame_data, frame_size);
+	}
 
 	if (result == 0) {
 		// Preload txbuf with the OVP frame. We'll push it at the decision time.
 		// If we've already preloaded txbuf for this frame slot, this overwrites.
-		load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
+		load_ovp_frame_into_txbuf(modulator_frame_buffer, software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE);
 		ovp_txbufs_this_frame++;	// for detection of overwrites.
 		// Do not push_txbuf_to_msk() at this time. In case of overwrites,
 		// we want to transmit the last one only.
@@ -955,8 +985,13 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 							hang_time_dummy_count++;
 							hang_timer_active = 1;
 						}
-						process_ovp_payload_software(modulator_frame_buffer, sizeof(modulator_frame_buffer));
-						load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
+
+						if (software_tx_processing) {
+							process_ovp_payload_software(modulator_frame_buffer, sizeof(modulator_frame_buffer));
+							load_ovp_frame_into_txbuf(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
+						} else {
+							load_opv_frame_into_txbuf(modulator_frame_buffer, OVP_SINGLE_FRAME_SIZE);
+						}
 					}
 					local_ts_base = get_timestamp_ms();
 					iio_buffer_push(txbuf);
@@ -1096,8 +1131,8 @@ int main (void)
 			printf("* set_timeout returned %d, which is a success.\n", ret);
 		}
 
-	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
-	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
+	printf("* Creating TX IIO buffer, size %d\n", software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE);
+	txbuf = iio_device_create_buffer(tx, software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit();
