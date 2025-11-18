@@ -12,13 +12,12 @@
 #include "receiver.h"
 #include "statistics.h"
 #include "timestamp.h"
-
+#include "udp_socket.h"
 
 extern volatile int ovp_running;
 extern struct sockaddr_in udp_client_addr;
 extern socklen_t udp_client_len;
 extern ssize_t udp_bytes_received;
-extern int ovp_udp_socket;
 extern pthread_mutex_t timeline_lock;	// shared by all threads
 extern int process_ovp_frame(uint8_t *frame_data, size_t frame_size);
 extern int init_ovp_udp_listener(void);
