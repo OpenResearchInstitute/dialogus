@@ -33,6 +33,7 @@
 #include "registers.h"
 #include "statistics.h"
 #include "timestamp.h"
+#include "udp_listener.h"
 
 /* helper macros */
 #define MHZ(x) ((long long)(x*1000000.0 + .5))
@@ -66,17 +67,16 @@ float num_microseconds = 5*20;
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 // OVP UDP Interface
-static int ovp_udp_socket = -1;
+int ovp_udp_socket = -1;
 volatile int ovp_transmission_active = 0;
 static struct sockaddr_in ovp_listen_addr;
-static pthread_t ovp_udp_thread;
-static volatile int ovp_running = 0;
+volatile int ovp_running = 0;
 pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
 
 // UDP connection used for encapsulated frame packets in both direction
-static struct sockaddr_in udp_client_addr;
-static socklen_t udp_client_len;
-static ssize_t udp_bytes_received;
+struct sockaddr_in udp_client_addr;
+socklen_t udp_client_len;
+ssize_t udp_bytes_received;
 
 // OVP transmit timeline manager
 int64_t decision_time = 0;		// us timestamp after which a new frame is late
@@ -94,9 +94,6 @@ int hang_timer_frames = 25;	// Number of dummy frames before ending session
 static uint32_t session_ts_base = 0;	// timestamp at start of a session
 static int64_t session_T0 = 0;	// Origin of time for this session (microseconds)
 
-
-// OVP Frame Buffer for transmit (sized for actual frames)
-static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
 
 // OVP modulator frame buffer
 // This buffer is used whenever we build a frame to send to the
@@ -814,101 +811,6 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 	return result;
 }
 
-
-// UDP listener thread
-void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
-	uint32_t recv_ts;
-	uint32_t last_recv_ts = 0;
-
-
-	while (ovp_running) {
-
-		udp_bytes_received = recvfrom(
-			ovp_udp_socket,
-			ovp_frame_buffer,
-			sizeof(ovp_frame_buffer),
-			0, // blocking receive - will wait for frames
-			(struct sockaddr*)&udp_client_addr,
-			&udp_client_len
-		);
-
-		// notify the receive process that we know the client address
-		receiver_ok_to_forward_frames(true);
-
-		// might be shutting down now, don't grab the mutex
-		if (!ovp_running) {
-			break;
-		}
-		pthread_mutex_lock(&timeline_lock);
-
-		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
-			recv_ts = get_timestamp_ms();
-			printf("OVP: Received %zd bytes from %s:%d after %dms ending with ", udp_bytes_received,
-					inet_ntoa(udp_client_addr.sin_addr),
-					ntohs(udp_client_addr.sin_port),
-					recv_ts - last_recv_ts);
-			last_recv_ts = recv_ts;
-			for (int i=OVP_SINGLE_FRAME_SIZE - 9; i<OVP_SINGLE_FRAME_SIZE; i++) {
-				printf("%02x ", ovp_frame_buffer[i]);
-			}
-			printf("\n");
-
-			// Process the frame
-			process_ovp_frame(ovp_frame_buffer, udp_bytes_received);
-		} else if (udp_bytes_received >= 0) {
-			printf("OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
-					udp_bytes_received, OVP_SINGLE_FRAME_SIZE);
-			ovp_frame_errors++;
-		} else if (udp_bytes_received < 0) {
-			if (errno != EAGAIN && errno != EWOULDBLOCK && ovp_running) {
-				perror("OVP: UDP receive error");	// don't exit on receive errors
-			}
-		}
-		pthread_mutex_unlock(&timeline_lock);
-	}
-
-	printf("OVP: UDP listener thread exiting\n");
-	return NULL;
-}
-
-// Start OVP UDP listener
-int start_ovp_listener(void) {
-	if (init_ovp_udp_listener() < 0) {
-		return -1;
-	}
-
-	ovp_running = 1;
-
-	if (pthread_create(&ovp_udp_thread, NULL, ovp_udp_listener_thread, NULL) != 0) {
-		perror("OVP: Failed to create UDP thread");
-		close(ovp_udp_socket);
-		ovp_udp_socket = -1;
-		ovp_running = 0;
-		return -1;
-	}
-
-	printf("OVP: Listener started successfully\n");
-	return 0;
-}
-
-// Stop OVP UDP listener
-void stop_ovp_listener(void) {
-	if (ovp_running) {
-		ovp_running = 0;
-
-		// Close socket to unblock recvfrom in thread
-		if (ovp_udp_socket >= 0) {
-			close(ovp_udp_socket);
-			ovp_udp_socket = -1;
-		}
-
-		if (ovp_udp_thread) {
-			pthread_cancel(ovp_udp_thread);
-		}
-
-		printf("OVP: UDP listener stopped\n");
-	}
-}
 
 
 // OVP Timeline Manager thread
