@@ -1,10 +1,11 @@
-# build with:    docker build --platform linux/amd64 -t build-from-makefile .
+# This Dockerfile is used with the OLD build scheme, using a script.
+# Please don't use it for new development.
 
-FROM ubuntu:24.04
+FROM ubuntu:24.10
 WORKDIR /app
 RUN apt update -y
 RUN apt upgrade -y
-RUN apt install -y wget xz-utils make git
+RUN apt install -y wget xz-utils
 RUN wget http://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/arm-linux-gnueabihf/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz
 RUN tar xvf gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz
 RUN rm gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz

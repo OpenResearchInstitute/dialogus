@@ -180,6 +180,9 @@ void cleanup_and_exit(void)
 
 	printf("* Destroying context\n");
 	if (ctx) { iio_context_destroy(ctx); }
+
+	printf("Goodbye from Dialogus version %s\n", DIALOGUS_VERSION);
+
 	exit(0);
 }
 
@@ -1010,6 +1013,9 @@ void stop_timeline_manager(void) {
 
 int main (void)
 {
+
+	printf("Hello from Dialogus version %s\n", DIALOGUS_VERSION);
+
 	// Streaming devices
 	struct iio_device *tx;
 	struct iio_device *rx;

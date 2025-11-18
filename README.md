@@ -169,17 +169,22 @@ the compiler command line. It might be useful with some other toolchains.
 
 If your local host machine is not running Linux, or if you don't want to clutter
 up your machine with the cross-platform toolchain, you may find it convenient to
-do the cross-platform building in a (Docker) container. For example, I've used
-this method to build the application on a Mac.
+do the cross-platform building in a (Docker) container. For example, I now use
+this method routinely to build the application on a Mac.
 
-`Dockerfile` contains the steps to build the container image:
+### Building with a Command Line in a Container (Old and Busted)
+
+This is the OLD WAY of building Dialogus, last used with opulent_voice.c.
+Please don't use this way for new development.
+
+`Dockerfile.script` contains the steps to build the container image. Here's how:
 
 ```
-docker build --platform linux/amd64 -t build-application .
+docker build -f Dockerfile.script --platform linux/amd64 -t build-application .
 ```
 
 Create a shell script to perform the build operation(s) you need. The commands
-are just like the ones we used in the previous section. The file
+are just like the ones we used to build manually. The file
 `build-both-loopback-rx.sh` is an example of such a script.
 
 To run the script in the container, use a command like this:
@@ -193,4 +198,56 @@ in `conbuild-both-loopback-rx.sh`, and run the shell script (with no arguments
 needed) whenever you want to rebuild the application(s).
 
 If all goes well, the cross-platform compiler running inside the container will
-have written the Pluto executable(s) into the current directory on your host.
+have written the Pluto executable(s) into the CURRENT DIRECTORY on your host.
+
+### Building with a Makefile in a Container (New Hotness)
+
+We now build Dialogus using a Makefile. This replaces the above method.
+Please use this method for new development. It's much handier for builds
+involving more than a few source files.
+
+`Dockerfile` contains the steps to build the container image. Here's how:
+
+```
+docker build --platform linux/amd64 -t build-from-makefile .
+```
+
+You don't need to name `Dockerfile` explicitly because that's the
+default name. Notice that this builds a different container image than
+the one we used before. It now includes `make` and `git`.
+
+Create a makefile to perform the build operation(s) you need.
+You'll probably want to start with `Makefile.dialogus`, which contains a few
+nice tricks, including extracting a version description from the current
+git commit hash and tags. The version description goes into the binary
+filename, and also into a #define DIALOGUS_VERSION that can be used to
+print out Dialogus version information from inside the program. (This
+works best if you commit, at least locally, before building.)
+
+The makefile also keeps the object and target binary files out of your
+way in separate directories, `obj` and `bin`.
+
+To build, you can use the script `conbuild-makefile.sh`. Just provide it
+with the name of the makefile you want to use. Like this:
+
+```
+./conbuild-makefile.sh Makefile.dialogus
+```
+
+That builds the default target, which is of course the binary executable.
+
+If you want to build some other target(s), such as `clean`, you can append
+those target names at the end, like this:
+
+```
+./conbuild-makefile.sh Makefile.dialogus clean
+```
+
+That will not build the default target (unless you name it), but it will
+try to build each target you mention.
+
+Remember, this Makefile is being interpreted inside the container, so
+it can't do things like run the executable on the target, or copy files
+to other parts of the host's filesystem (unless you add such a mapping),
+etc. That's why there's no `run` target, for instance.
+

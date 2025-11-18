@@ -1,0 +1,36 @@
+# Project variables
+CC := arm-linux-gnueabihf-gcc
+CFLAGS := -mfloat-abi=hard --sysroot=$(HOME)/pluto-0.38.sysroot -g -lpthread -liio -lm -Wall -Wextra
+
+SOURCES := dialogus.c registers.c statistics.c debugthread.c timestamp.c debug_utils.c receiver.c randomizer.c fec.c interleaver.c
+OBJ_DIR := obj
+OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(SOURCES))
+BIN_DIR := bin
+
+# Get git revision and pass as a define to the compiler and also add to name of the binary
+# Use a default version if git command fails (e.g., not a git repo)
+GIT_DESCRIBE := $(shell git describe --tags --always --dirty --match "v*" 2>/dev/null || echo "v0.0.0-unknown")
+GIT_CFLAGS := -DDIALOGUS_VERSION=\"$(GIT_DESCRIBE)\"
+TARGET_NAME = dialogus_$(GIT_DESCRIBE)
+TARGET = $(BIN_DIR)/$(TARGET_NAME)
+
+.PHONY: all clean run
+
+all: $(BIN_DIR) $(OBJ_DIR) $(TARGET)
+
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) -o $@
+
+# Rule for compiling .c files into .o files
+$(OBJ_DIR)/%.o: %.c
+	$(CC) $(CFLAGS) $(GIT_CFLAGS) -c $< -o $@
+
+# Clean target to remove build artifacts
+clean:
+	rm -f $(TARGET) $(OBJS)
