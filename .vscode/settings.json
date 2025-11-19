@@ -25,6 +25,7 @@
     ],
     "cSpell.enabledFileTypes": {
         "c": true,
-        "shellscript": false
+        "shellscript": false,
+        "makefile": false
     }
 }
