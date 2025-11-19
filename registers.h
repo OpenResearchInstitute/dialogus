@@ -1,3 +1,7 @@
+#ifndef REGISTERS_H
+#define REGISTERS_H
+
+
 #include <stddef.h>
 #include <sys/mman.h>
 
@@ -52,3 +56,5 @@ uint32_t capture_and_read_msk(size_t offset);
 //get the address offset of an MSK register
 //value = OFFSET_MSK(MSK_Init);
 #define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
+
+#endif // REGISTERS_H

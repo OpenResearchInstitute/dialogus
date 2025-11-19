@@ -1,5 +1,5 @@
-
-
+#ifndef NUMEROLOGY_H
+#define NUMEROLOGY_H
 
 
 // Sizes for encapsulated Opulent Voice frames
@@ -24,3 +24,5 @@
 // Assuming that the demod only strips off the frame sync word and does no other processing
 #define OVP_DEMOD_FRAME_SIZE (OVP_ENCODED_HEADER_SIZE + OVP_ENCODED_PAYLOAD_SIZE)
 #define OVP_DEMOD_PAYLOAD_OFFSET (OVP_ENCODED_HEADER_SIZE)
+
+#endif // NUMEROLOGY_H
