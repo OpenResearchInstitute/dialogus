@@ -1,6 +1,8 @@
 #ifndef FRAME_HEADER_H
 #define FRAME_HEADER_H
 
+#include <stdint.h>
+
 extern unsigned char active_station_id_binary[];
 extern char active_station_id_ascii[];
 
