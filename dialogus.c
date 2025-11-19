@@ -25,6 +25,7 @@
 
 #include "debugthread.h"
 #include "fec.h"
+#include "frame_header.h"
 #include "interleaver.h"
 #include "numerology.h"
 #include "radio.h"
@@ -85,8 +86,6 @@ static pthread_cond_t timeline_start = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t tls_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // OVP transmit session management variables
-static unsigned char active_station_id_binary[6] = {0,0,0,0,0,0};
-char active_station_id_ascii[11] = "";	// 10 chars + null terminator is max possible
 int hang_timer_active = 0;
 int dummy_frames_sent = 0;	// Count of dummy frames sent in this hang time
 int hang_timer_frames = 25;	// Number of dummy frames before ending session
@@ -106,16 +105,10 @@ static uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
 void start_transmission_session(void);
 void end_transmission_session_normally(void);
 void abort_transmission_session(void);
-void stop_ovp_listener(void);
 void stop_timeline_manager(void);
-void stop_periodic_statistics_reporter(void);
 int enable_msk_transmission(void);
 int disable_msk_transmission(void);
 int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size);
-void encode_ovp_header(uint8_t *input, uint8_t *output);
-void encode_ovp_payload(uint8_t *input, uint8_t *output);
-void decode_ovp_header(uint8_t *input, uint8_t *output);
-void decode_ovp_payload(uint8_t *input, uint8_t *output);
 void create_dummy_frame(void);
 void create_postamble_frame(void);
 
@@ -307,37 +300,6 @@ void print_rssi(void) {
 }
 
 // -=-=-=-= Opulent Voice Functions =-=-=-=-=-=-
-
-/* Decode a base-40 encoded callsign to its text representation
- *
- * encoded -- array of 6 bytes encoded as specified for Opulent Voice
- * buffer  -- array of 11 chars to receive the decoded station ID
- */
-void decode_station_id(unsigned char *encoded, char *buffer) /* buffer[11] */
-{
-	static const char callsign_map[] = "xABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.";
-
-	char result[11];
-
-	uint64_t numeric_id = ((uint64_t)encoded[0] << 40) \
-						+ ((uint64_t)encoded[1] << 32) \
-						+ ((uint64_t)encoded[2] << 24) \
-						+ ((uint64_t)encoded[3] << 16) \
-						+ ((uint64_t)encoded[4] << 8 )  \
-						+  (uint64_t)encoded[5];
-
-	// decode each base-40 digit and map them to the appropriate character.
-	size_t index = 0;
-	while (numeric_id > 0)
-	{
-		result[index++] = callsign_map[numeric_id % 40];
-		numeric_id /= 40;
-	}
-	result[index] = 0x00;
-
-	strncpy(buffer, result, 11);
-
-}
 
 // Send OVP frame data to MSK modulator via IIO buffer in two steps.
 // Frame data should already be formatted with scrambling + FEC coding
@@ -749,8 +711,7 @@ int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 	}
 
 	// Extract and store station ID for regulatory compliance
-	memcpy(active_station_id_binary, frame_data, 6);	// Station ID length of 6 bytes
-	decode_station_id(active_station_id_binary, active_station_id_ascii);
+	save_header_station_id(frame_data);
 
 	// Real frame received - cancel hang timer
 	if (hang_timer_active) {
