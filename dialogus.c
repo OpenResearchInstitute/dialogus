@@ -26,7 +26,7 @@
 #include "debugthread.h"
 #include "fec.h"
 #include "frame_header.h"
-#include "iio_setup.h"
+#include "iio_ops.h"
 #include "interleaver.h"
 #include "numerology.h"
 #include "radio.h"

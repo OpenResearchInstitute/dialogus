@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "iio_setup.h"
+#include "iio_ops.h"
 #include "numerology.h"
 #include "radio.h"
 #include "registers.h"
