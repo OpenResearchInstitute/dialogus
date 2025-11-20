@@ -80,7 +80,7 @@ void abort_transmission_session(void);
 bool stop = false;
 
 /* cleanup and exit */
-void cleanup_and_exit(void)
+void cleanup_and_exit(int retval)
 {
 	// End any active transmission session
 	if (ovp_transmission_active) {
@@ -99,7 +99,7 @@ void cleanup_and_exit(void)
 
 	printf("Goodbye from Dialogus version %s\n", DIALOGUS_VERSION);
 
-	exit(0);
+	exit(retval);
 }
 
 // We want the console user to be able to interrupt processing by pressing Ctrl-C,
@@ -475,55 +475,51 @@ int main (void)
 	// Memory-map several ranges of registers for direct access
 	if (init_register_access() != 0) {
 		perror("Register access setup failed");
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 
 	// Setup the MSK modem in the PL for Opulent Voice operations
 	msk_setup();
 
-
-	printf("Rx DMAC FLAGS after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_FLAGS));
-	printf("Rx DMAC Irq_Mask after init: 0x%08x\n", read_mapped_reg(rx_dmac_register_map, DMAC_IRQ_MASK));
-
 	if (start_debug_thread() < 0) {
-		printf("Failed to start debug thread\n");
-		return -1;
+		perror("Failed to start debug thread\n");
+		cleanup_and_exit(1);
 	}
 
 	// Start OVP Timeline Manager
 	if (start_timeline_manager() < 0) {
-		printf("Failed to start OVP timeline manager\n");
-		return -1;
+		perror("Failed to start OVP timeline manager\n");
+		cleanup_and_exit(1);
 	}
 
 	// Start periodic statistics reporter
 	if (start_periodic_statistics_reporter() < 0) {
-		printf("Failed to start periodic statistics reporter\n");
-		return -1;
+		perror("Failed to start periodic statistics reporter\n");
+		cleanup_and_exit(1);
 	}
 
 	// Start OVP UDP listener
 	if (start_ovp_listener() < 0) {
-		printf("Failed to start OVP listener\n");
-		return -1;	// exit if UDP setup fails
-	} else {
-		printf("OVP listener started on port %d\n", OVP_UDP_PORT);
-		printf("Ready to receive frames from Interlocutor\n");
-		printf("Press Ctrl+C to stop\n");
+		perror("Failed to start OVP listener\n");
+		cleanup_and_exit(1);
 	}
 
 	// Start OVP Receiver
 	if (start_ovp_receiver() < 0) {
-		printf("Failed to start OVP receiver\n");
-		return -1;	// exit if OVP receiver can't be started
+		perror("Failed to start OVP receiver\n");
+		cleanup_and_exit(1);
 	}
+
+	printf("OVP listener started on port %d\n", OVP_UDP_PORT);
+	printf("Ready to receive frames from Interlocutor\n");
+	printf("Press Ctrl+C to stop\n");
 
 	// Main loop for OVP mode - keep program running
 	while (!stop) {
-		usleep(1e6);	// one second sleep
+		usleep(1e5);	// tenth-second sleep
 	}
 
-	cleanup_and_exit();
+	cleanup_and_exit(0);
 
 	return 0;
 }

@@ -12,7 +12,7 @@
 #include "registers.h"
 #include "timestamp.h"
 
-extern void cleanup_and_exit(void);
+extern void cleanup_and_exit(int retval);
 
 
 #define IIO_ENSURE(expr) { \
@@ -49,7 +49,7 @@ static struct iio_buffer  *rxbuf = NULL;
 static void errchk(int v, const char* what) {
 	 if (v < 0) {
 		fprintf(stderr, "Error %d writing to channel \"%s\"\nvalue may not be supported.\n", v, what);
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 }
 
@@ -228,7 +228,7 @@ void iio_setup(void)
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 
 }
@@ -355,7 +355,7 @@ int push_txbuf_to_msk(void) {
 
 	if (result < 0) {
 		printf("OVP: Error pushing buffer to MSK: %zd\n", result);
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 
 	// Check that data is flowing to MSK block

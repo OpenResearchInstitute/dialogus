@@ -15,7 +15,7 @@
 #include "registers.h"
 #include "timestamp.h"
 
-extern void cleanup_and_exit(void);
+extern void cleanup_and_exit(int retval);
 extern int init_udp_socket(void);
 extern struct iio_channel *rx0_i;
 extern struct iio_context *ctx;
@@ -79,7 +79,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	rx_ctx = iio_context_clone(ctx);
 	if (!rx_ctx) {
 		printf("Failed to create receive context\n");
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 
 	// set the timeout to infinity; we may need to wait any length of time
@@ -107,7 +107,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	rx_buf = iio_device_create_buffer(rx_dev, OVP_DEMOD_FRAME_SIZE, false);
 	if (!rx_buf) {
 		perror("Could not create RX buffer");
-		cleanup_and_exit();
+		cleanup_and_exit(1);
 	}
 
 
@@ -120,7 +120,8 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 					printf("Refill timeout (no sync word yet?)\n");
 					nbytes_rx = 0;
 				} else {
-					printf("Error refilling buf %d\n",(int) nbytes_rx); cleanup_and_exit();
+					printf("Error refilling buf %d\n",(int) nbytes_rx);
+					cleanup_and_exit(1);
 				}
 		} else {
 			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
