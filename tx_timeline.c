@@ -1,0 +1,132 @@
+
+#include <iio.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include "numerology.h"
+#include "statistics.h"
+#include "timestamp.h"
+#include "tx_timeline.h"
+
+
+extern bool stop;
+extern volatile int ovp_transmission_active;
+extern pthread_mutex_t tls_lock;
+extern pthread_mutex_t timeline_lock;
+extern pthread_cond_t timeline_start;
+extern int64_t decision_time;
+extern int ovp_txbufs_this_frame;
+extern int64_t session_T0;
+extern bool hang_timer_active;
+extern int hang_timer_frames;
+extern uint8_t modulator_frame_buffer[];
+extern struct iio_buffer *txbuf;
+extern void create_postamble_frame(void);
+extern void create_dummy_frame(void);
+extern int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size);
+extern int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size);
+extern void end_transmission_session_normally(void);
+
+
+static pthread_t ovp_timeline_thread;
+
+
+// OVP Timeline Manager thread
+// Wakes up at each frame decision time (Td) during an active session
+// and sends a frame. In priority order:
+//		* A real frame if one is available, or
+//		* A postamble frame if the final hang time is completed, or
+//		* A dummy frame.
+void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
+	int64_t now;
+	static int hang_time_dummy_count = 0;
+	uint32_t local_ts_base;
+
+	while (!stop) {
+		while (ovp_transmission_active) {
+			// printf("timeline grabbing mutex\n");
+			pthread_mutex_lock(&timeline_lock);
+			if (decision_time != 0) {
+				now = get_timestamp_us();
+				// printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
+				if (now >= decision_time) {
+					if (ovp_txbufs_this_frame > 0) {
+						// We've already put a real frame into txbuf at this point
+						if (ovp_txbufs_this_frame > 1) {
+							ovp_untimely_frames += ovp_txbufs_this_frame - 1;
+							printf("timeline @ %lld: frame + %d untimely frames ", get_timestamp_us() - session_T0, ovp_txbufs_this_frame - 1);
+						} else {
+							printf("timeline @ %lld: frame ", get_timestamp_us() - session_T0);
+						}
+						ovp_frames_processed++;
+						hang_time_dummy_count = 0;
+						hang_timer_active = false;
+					} else {
+						if (hang_time_dummy_count >= hang_timer_frames) {
+							create_postamble_frame();
+							printf("timeline @ %lld: postamble ", get_timestamp_us() - session_T0);
+							hang_time_dummy_count = 0;
+							hang_timer_active = false;
+							ovp_transmission_active = 0;
+						} else {
+							create_dummy_frame();
+							printf("timeline @ %lld: dummy frame ", get_timestamp_us() - session_T0);
+							ovp_dummy_frames_sent++;
+							hang_time_dummy_count++;
+							hang_timer_active = true;
+						}
+						process_ovp_payload_software(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
+						load_ovp_frame_into_txbuf(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
+					}
+					local_ts_base = get_timestamp_ms();
+					iio_buffer_push(txbuf);
+					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					decision_time += 40e3;
+					ovp_txbufs_this_frame = 0;
+				}
+
+				// handle normal end of a transmission session (postamble was just pushed)
+				if (! ovp_transmission_active) {
+					end_transmission_session_normally();
+				}
+			}
+			pthread_mutex_unlock(&timeline_lock);
+			// printf("timeline released mutex\n");
+
+			now = get_timestamp_us();
+			if (decision_time - now > 0) {
+				usleep(decision_time - now);	// wait until next decision time
+			}
+
+		}
+
+		printf("OVP: Timeline paused until next transmission\n");
+		pthread_cond_wait(&timeline_start, &tls_lock);
+	}
+
+	printf("OVP: Timeline manager thread exiting\n");
+	return NULL;
+}
+
+int start_timeline_manager(void) {
+	if (pthread_create(&ovp_timeline_thread, NULL, ovp_timeline_manager_thread, NULL) != 0) {
+		perror("OVP: Failed to create timeline manager thread");
+		return -1;
+	}
+
+	printf("OVP: Timeline manager started successfully\n");
+	return 0;
+}
+
+void stop_timeline_manager(void) {
+	if (ovp_timeline_thread) {
+		pthread_cancel(ovp_timeline_thread);
+	}
+
+	printf("OVP: Timeline manager stopped\n");
+}
+
