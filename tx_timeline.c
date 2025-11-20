@@ -78,7 +78,6 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 						} else {
 							printf("timeline @ %lld: frame ", get_timestamp_us() - session_T0);
 						}
-						ovp_frames_processed++;
 						hang_time_dummy_count = 0;
 						hang_timer_active = false;
 					} else {
