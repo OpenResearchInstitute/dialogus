@@ -57,4 +57,11 @@ uint32_t capture_and_read_msk(size_t offset);
 //value = OFFSET_MSK(MSK_Init);
 #define OFFSET_MSK(offset) (offsetof(msk_top_regs_t, offset))
 
+
+// Values for Tx_Sync_Ctrl register
+#define TX_SYNC_CTRL_DISABLE 0
+#define TX_SYNC_CTRL_AUTO   0x0000000d  // enabled when transmitter turns on, both tone frequencies
+#define TX_SYNC_CTRL_FORCE  0x0000000e  // enabled now, both tone frequencies
+
+
 #endif // REGISTERS_H

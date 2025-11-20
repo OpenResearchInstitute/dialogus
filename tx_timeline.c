@@ -18,8 +18,6 @@ extern volatile int ovp_transmission_active;
 extern pthread_mutex_t tls_lock;
 extern pthread_mutex_t timeline_lock;
 extern pthread_cond_t timeline_start;
-extern int64_t decision_time;
-extern int ovp_txbufs_this_frame;
 extern int64_t session_T0;
 extern bool hang_timer_active;
 extern int hang_timer_frames;
@@ -34,6 +32,24 @@ extern void end_transmission_session_normally(void);
 
 static pthread_t ovp_timeline_thread;
 
+static int64_t decision_time = 0;	// us timestamp after which a new frame is late
+static int ovp_txbufs_this_frame = 0;	// number of UDP frames seen before decision time (should be 1)
+
+
+// Call this function to set a new decision time.
+void tx_timeline_set_decision_time(int64_t new_decision_time) {
+	decision_time = new_decision_time;
+}
+
+// Call this function each time a txbuf has been filled.
+// If it has not been called before the decision time, we don't have a
+// frame to transmit on time and must vamp with a dummy frame.
+// If it has been called more than once before the decision time,
+// all but the last one will have been overwritten; these lost
+// frames are designated "untimely".
+void tx_timeline_txbuf_filled(void) {
+	ovp_txbufs_this_frame++;
+}
 
 // OVP Timeline Manager thread
 // Wakes up at each frame decision time (Td) during an active session

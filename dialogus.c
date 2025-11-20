@@ -42,14 +42,6 @@
 #define MHZ(x) ((long long)(x*1000000.0 + .5))
 #define GHZ(x) ((long long)(x*1000000000.0 + .5))
 
-/* Operating frequencies */
-#define CHANNEL_BITRATE (54200)		// OPV bit rate
-#define CHANNEL_CENTER MHZ(905.05)	// a legit channel in USA band plan
-#define CHANNEL_IF_SPACING (32)		// somewhat arbitrary choice
-#define IF_FREQUENCY (CHANNEL_BITRATE * CHANNEL_IF_SPACING / 4)		// equals 433_600
-#define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
-#define RF_BANDWIDTH MHZ(1)	// Must be at least the signal bandwidth + twice the IF_FREQUENCY
-
 #define IIO_ENSURE(expr) { \
 	if (!(expr)) { \
 		(void) fprintf(stderr, "assertion failed (%s:%d)\n", __FILE__, __LINE__); \
@@ -58,30 +50,22 @@
 }
 
 
-#define TX_SYNC_CTRL_WORD 0x00000000
-#define TX_SYNC_COUNT 0	// not currently used
-
-
 //-=-=-=-=-=-=-= GLOBAL VARIABLES -=-=-=-=-=-=-=-=
 // Don't @ me bro! At least it's not GOTOs
 
 // one bit time is 19 microseconds
-float num_microseconds = 5*20;
+float num_microseconds_between_writes_to_same_register = 5*20;
 
 // -=-=-=-=-=-=- Opulent Voice Global Variables =-=-=-=-=-=-=-
 // OVP UDP Interface
 volatile int ovp_transmission_active = 0;
-volatile int ovp_running = 0;
 pthread_mutex_t timeline_lock = PTHREAD_MUTEX_INITIALIZER;	// shared by all threads
 
 // UDP connection used for encapsulated frame packets in both direction
 struct sockaddr_in udp_client_addr;
 socklen_t udp_client_len;
-ssize_t udp_bytes_received;
 
 // OVP transmit timeline manager
-int64_t decision_time = 0;		// us timestamp after which a new frame is late
-int ovp_txbufs_this_frame = 0;	// number of UDP frames seen before decision time (should be 1)
 pthread_cond_t timeline_start = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t tls_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -101,17 +85,10 @@ int64_t session_T0 = 0;	// Origin of time for this session (microseconds)
 uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
 
 
-// Opulent Voice Protocol functions
+// Opulent Voice Protocol functions (forward declarations)
 void start_transmission_session(void);
 void end_transmission_session_normally(void);
 void abort_transmission_session(void);
-void stop_timeline_manager(void);
-int enable_msk_transmission(void);
-int disable_msk_transmission(void);
-int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size);
-void create_dummy_frame(void);
-void create_postamble_frame(void);
-
 
 /* common RX and TX streaming params */
 struct stream_cfg {
@@ -121,7 +98,9 @@ struct stream_cfg {
 	const char* rf_port;	// Port name
 };
 
-/* static scratch mem for strings */
+/* scratch mem for strings */
+// Strings in this buffer are transient. Caller must not expect
+// the string to persist after it is used.
 static char tmpstr[64];
 
 /* IIO structs required for streaming */
@@ -206,6 +185,7 @@ static void wr_ch_str(struct iio_channel *chn, const char* what, const char* str
 }
 
 /* helper function generating channel names */
+// The channel name must not be retained by the caller.
 static char* get_ch_name(const char* type, int id)
 {
 	snprintf(tmpstr, sizeof(tmpstr), "%s%d", type, id);
@@ -436,7 +416,7 @@ void start_transmission_session(void) {
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
 	session_T0 = get_timestamp_us();	// used for timeline management
-	decision_time = session_T0 + 60e3;	// 60ms to the middle of the next frame, T0-referenced
+	tx_timeline_set_decision_time(session_T0 + 60e3);	// 60ms to the middle of the next frame, T0-referenced
 
 	// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
 	uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
@@ -479,6 +459,7 @@ void end_transmission_session_normally(void) {
 	ovp_sessions_ended++;
 	hang_timer_active = false;
 	dummy_frames_sent = 0;
+	tx_timeline_set_decision_time(0);	// decision time no longer valid until next transmission starts
 
 	printf("OVP: Session ended after %dms, ready for next transmission\n", get_timestamp_ms()-session_ts_base);
 }
@@ -500,6 +481,7 @@ void abort_transmission_session(void) {
 
 	hang_timer_active = false;
 	dummy_frames_sent = 0;
+	tx_timeline_set_decision_time(0);	// decision time no longer valid until next transmission starts
 
 	if (ovp_transmission_active) {
 		printf("OVP: Session aborted after %dms\n", get_timestamp_ms()-session_ts_base);
@@ -683,7 +665,7 @@ int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) 
 		// Preload txbuf with the OVP frame. We'll push it at the decision time.
 		// If we've already preloaded txbuf for this frame slot, this overwrites.
 		load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
-		ovp_txbufs_this_frame++;	// for detection of overwrites.
+		tx_timeline_txbuf_filled();	// notify the timeline to detect underruns/overwrites.
 		// Do not push_txbuf_to_msk() at this time. In case of overwrites,
 		// we want to transmit the last one only.
 	}
@@ -740,24 +722,22 @@ int main (void)
 
 	printf("Hello from Dialogus version %s\n", DIALOGUS_VERSION);
 
+	// Listen to ctrl+c and IIO_ENSURE
+	signal(SIGINT, handle_sig);
+
 	// Streaming devices
 	struct iio_device *tx;
 	struct iio_device *rx;
 
-	// Stream configurations
-	struct stream_cfg rxcfg;
-	struct stream_cfg txcfg;
-
-	// Listen to ctrl+c and IIO_ENSURE
-	signal(SIGINT, handle_sig);
-
 	// OPV hardware RX stream config
+	struct stream_cfg rxcfg;
 	rxcfg.bw_hz = RF_BANDWIDTH;
 	rxcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s rx sample rate
 	rxcfg.lo_hz = LO_FREQ;
 	rxcfg.rf_port = "A_BALANCED";	// port A (select for rf freq.)
 
 	// OPV hardware TX stream config
+	struct stream_cfg txcfg;
 	txcfg.bw_hz = RF_BANDWIDTH;
 	txcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s tx sample rate
 	txcfg.lo_hz = LO_FREQ;
@@ -782,20 +762,27 @@ int main (void)
 	IIO_ENSURE(get_ad9361_stream_ch(TX, tx, 1, &tx0_q) && "TX chan q not found");
 
 	printf("* Enabling IIO streaming channels\n");
+	// We are enabling all four of these channels, even though we are actually
+	// only using the lower half of the i channel in each case. This may not be
+	// strictly necessary, but it seems safer to stick with the full I/Q format
+	// for each of transmit and receive, since that is the normal use case for
+	// IIO in an SDR. We choose not to diverge from the Analog Devices example
+	// code unnecessarily.
+	// A call to iio_channel_enable() apparently can't fail. It returns void.
 	iio_channel_enable(rx0_i);
 	iio_channel_enable(rx0_q);
 	iio_channel_enable(tx0_i);
 	iio_channel_enable(tx0_q);
 
-	// number of kernel buffers can be increased from the default of 4 below
-	// this has to be done before iio_device_create_buffer()
+	// The number of kernel buffers can be increased from the default of 4 below.
+	// This has to be done before iio_device_create_buffer().
+	// We go ahead and set the default value explicitly, just to be sure.
 	int ret = iio_device_set_kernel_buffers_count(tx, 4);
 	if (ret < 0) {
 		char buf_test[256];
 		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
 		printf("* set_kernel_buffers (tx) failed : %s\n", buf_test);
-	} else {
-		printf("* set_kernel_buffers (tx) returned %d, which is a success.\n", ret);
+		exit(1);
 	}
 
 	ret = iio_device_set_kernel_buffers_count(rx, 4);
@@ -803,22 +790,21 @@ int main (void)
 		char buf_test[256];
 		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
 		printf("* set_kernel_buffers (rx) failed : %s\n", buf_test);
-	} else {
-		printf("* set_kernel_buffers (rx) returned %d, which is a success.\n", ret);
+		exit(1);
 	}
 
 	// set the timeout to infinity; we may need to wait any length of time
 	// before the first frame of a transmission is received, so we need the
 	// receive buffer_refill to never time out.
+	// However, it appears that this setting does not get copied when we
+	// clone the context for receive. So we will have to set it again later.
 	ret = iio_context_set_timeout(ctx, 0);
-		if (ret < 0) {
-			char timeout_test[256];
-			iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
-			printf("* set_timeout failed : %s\n", timeout_test);
-		}
-		else {
-			printf("* set_timeout returned %d, which is a success.\n", ret);
-		}
+	if (ret < 0) {
+		char timeout_test[256];
+		iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
+		printf("* set_timeout failed : %s\n", timeout_test);
+		exit(1);
+	}
 
 	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
 	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
@@ -841,12 +827,12 @@ int main (void)
 
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_WORD);
-	WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_WORD);
+	printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_DISABLE);
+	WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_DISABLE);
 	printf("Reading TX_SYNC_CTRL. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Ctrl), OFFSET_MSK(Tx_Sync_Ctrl));
-	printf("Configure the TX_SYNC_CNT register to TX_SYNC_COUNT bit times.\n");
-	WRITE_MSK(Tx_Sync_Cnt, TX_SYNC_COUNT);
-	printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
+	// printf("Configure the TX_SYNC_CNT register to TX_SYNC_COUNT bit times.\n");
+	// WRITE_MSK(Tx_Sync_Cnt, TX_SYNC_COUNT);
+	// printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 	printf("Initial FIFOs before INIT: tx fifo: %08x rx fifo: %08x\n",
@@ -935,18 +921,16 @@ int main (void)
 
 	WRITE_MSK(LPF_Config_0, 0x00000002);	//zero and hold accumulators
 	printf("wrote 0x00000002 to LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
-	usleep(num_microseconds);
+	usleep(num_microseconds_between_writes_to_same_register);
 	WRITE_MSK(LPF_Config_0, 0x00000000);	//accumulators in normal operation
 	printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
 	printf("Write some default values for PI gain and bit shift.\n");
 	WRITE_MSK(LPF_Config_1, 0x005a5a5a);
 	WRITE_MSK(LPF_Config_2, 0x00a5a5a5);
-	usleep(num_microseconds);
 	printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 	printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
 	printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
-	usleep(num_microseconds);
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Set TX_DATA_WIDTH to 8.\n");
@@ -1002,7 +986,6 @@ int main (void)
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Deassert INIT: Write 0 to MSK_INIT\n");
-	usleep(num_microseconds);
 	WRITE_MSK(MSK_Init, 0x00000000);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 

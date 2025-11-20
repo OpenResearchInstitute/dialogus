@@ -14,15 +14,16 @@
 #include "timestamp.h"
 #include "udp_socket.h"
 
-extern volatile int ovp_running;
 extern struct sockaddr_in udp_client_addr;
 extern socklen_t udp_client_len;
-extern ssize_t udp_bytes_received;
 extern pthread_mutex_t timeline_lock;	// shared by all threads
 extern int process_ovp_frame(uint8_t *frame_data, size_t frame_size);
 extern int init_ovp_udp_listener(void);
 
 static pthread_t ovp_udp_thread;
+
+// True if the thread has started successfully and not stopped
+static bool udp_listener_running;
 
 // OVP Frame Buffer for transmit (sized for actual frames)
 static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
@@ -31,9 +32,10 @@ static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
 void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 	uint32_t recv_ts;
 	uint32_t last_recv_ts = 0;
+	ssize_t udp_bytes_received;	// not cumulative, updated on each recvfrom call
 
 
-	while (ovp_running) {
+	while (udp_listener_running) {
 
 		udp_bytes_received = recvfrom(
 			ovp_udp_socket,
@@ -48,7 +50,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 		receiver_ok_to_forward_frames(true);
 
 		// might be shutting down now, don't grab the mutex
-		if (!ovp_running) {
+		if (!udp_listener_running) {
 			break;
 		}
 		pthread_mutex_lock(&timeline_lock);
@@ -72,7 +74,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 					udp_bytes_received, OVP_SINGLE_FRAME_SIZE);
 			ovp_frame_errors++;
 		} else if (udp_bytes_received < 0) {
-			if (errno != EAGAIN && errno != EWOULDBLOCK && ovp_running) {
+			if (errno != EAGAIN && errno != EWOULDBLOCK && udp_listener_running) {
 				perror("OVP: UDP receive error");	// don't exit on receive errors
 			}
 		}
@@ -89,13 +91,13 @@ int start_ovp_listener(void) {
 		return -1;
 	}
 
-	ovp_running = 1;
+	udp_listener_running = true;
 
 	if (pthread_create(&ovp_udp_thread, NULL, ovp_udp_listener_thread, NULL) != 0) {
 		perror("OVP: Failed to create UDP thread");
 		close(ovp_udp_socket);
 		ovp_udp_socket = -1;
-		ovp_running = 0;
+		udp_listener_running = false;
 		return -1;
 	}
 
@@ -105,8 +107,8 @@ int start_ovp_listener(void) {
 
 // Stop OVP UDP listener
 void stop_ovp_listener(void) {
-	if (ovp_running) {
-		ovp_running = 0;
+	if (udp_listener_running) {
+		udp_listener_running = false;
 
 		// Close socket to unblock recvfrom in thread
 		if (ovp_udp_socket >= 0) {
