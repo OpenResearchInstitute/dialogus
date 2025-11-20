@@ -2,7 +2,7 @@
 CC := arm-linux-gnueabihf-gcc
 CFLAGS := -mfloat-abi=hard --sysroot=$(HOME)/pluto-0.38.sysroot -g -lpthread -liio -lm -Wall -Wextra
 
-SOURCES := dialogus.c registers.c statistics.c debugthread.c timestamp.c debug_utils.c receiver.c randomizer.c fec.c interleaver.c udp_listener.c udp_socket.c frame_header.c tx_timeline.c iio_ops.c
+SOURCES := dialogus.c registers.c statistics.c debugthread.c timestamp.c debug_utils.c receiver.c randomizer.c fec.c interleaver.c udp_listener.c udp_socket.c frame_header.c tx_timeline.c iio_ops.c msk_setup.c
 OBJ_DIR := obj
 OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(SOURCES))
 BIN_DIR := bin
