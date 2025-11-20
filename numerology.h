@@ -1,6 +1,9 @@
 #ifndef NUMEROLOGY_H
 #define NUMEROLOGY_H
 
+/* helper macros */
+#define MHZ(x) ((long long)(x*1000000.0 + .5))
+#define GHZ(x) ((long long)(x*1000000000.0 + .5))
 
 /* Operating frequencies */
 #define CHANNEL_BITRATE (54200)		// OPV bit rate
