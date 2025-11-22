@@ -22,7 +22,8 @@
         "rssi",
         "rxbuf",
         "rxcfg",
-        "Skunkwrx"
+        "Skunkwrx",
+        "Zynq"
     ],
     "cSpell.enabledFileTypes": {
         "c": true,

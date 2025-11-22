@@ -20,11 +20,11 @@ extern pthread_mutex_t timeline_lock;
 // ---------- Debug Thread -----------------------------
 
 void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
-	uint32_t sync_status;
-	bool frame_sync_locked;
-	bool frame_buffer_overflow;
-	uint32_t frames_received = 0;
-	uint32_t frame_sync_errors = 0;
+	uint32_t sync_status __attribute__((unused));
+	bool frame_sync_locked __attribute__((unused));
+	bool frame_buffer_overflow __attribute__((unused));
+	uint32_t frames_received __attribute__((unused)) = 0;
+	uint32_t frame_sync_errors __attribute__((unused)) = 0;
 
 	while (!stop) {
 		uint32_t now;
