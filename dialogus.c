@@ -185,8 +185,6 @@ int disable_msk_transmission(void) {
 
 // Processing triggered by the arrival of a first frame after an idle period.
 void start_transmission_session(void) {
-	uint32_t local_ts_base;
-
 	if (ovp_transmission_active) {	// should never happen
 		perror("Transmission session started while already active");
 		exit(1);
