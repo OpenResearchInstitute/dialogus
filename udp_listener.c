@@ -17,7 +17,7 @@
 extern struct sockaddr_in udp_client_addr;
 extern socklen_t udp_client_len;
 extern pthread_mutex_t timeline_lock;	// shared by all threads
-extern int process_ovp_frame(uint8_t *frame_data, size_t frame_size);
+extern void accept_decapsulated_frame(uint8_t *frame_data);
 extern int init_ovp_udp_listener(void);
 
 static pthread_t ovp_udp_thread;
@@ -25,7 +25,7 @@ static pthread_t ovp_udp_thread;
 // True if the thread has started successfully and not stopped
 static bool udp_listener_running;
 
-// OVP Frame Buffer for transmit (sized for actual frames)
+// OVP Frame Buffer for transmit (sized for logical frames)
 static uint8_t ovp_frame_buffer[OVP_SINGLE_FRAME_SIZE];
 
 // UDP listener thread
@@ -57,18 +57,18 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 
 		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
 			recv_ts = get_timestamp_ms();
-			printf("OVP: Received %zd bytes from %s:%d after %dms ending with ", udp_bytes_received,
+			printf("OVP: Received %zd encapsulated bytes from %s:%d after %dms ending with ", udp_bytes_received,
 					inet_ntoa(udp_client_addr.sin_addr),
 					ntohs(udp_client_addr.sin_port),
 					recv_ts - last_recv_ts);
 			last_recv_ts = recv_ts;
-			for (int i=OVP_SINGLE_FRAME_SIZE - 9; i<OVP_SINGLE_FRAME_SIZE; i++) {
+			for (int i=0 /*!!! OVP_SINGLE_FRAME_SIZE - 9*/; i<OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", ovp_frame_buffer[i]);
 			}
 			printf("\n");
 
 			// Process the frame
-			process_ovp_frame(ovp_frame_buffer, udp_bytes_received);
+			accept_decapsulated_frame(ovp_frame_buffer);
 		} else if (udp_bytes_received >= 0) {
 			printf("OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
 					udp_bytes_received, OVP_SINGLE_FRAME_SIZE);

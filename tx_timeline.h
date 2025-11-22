@@ -3,7 +3,7 @@
 
 
 void tx_timeline_set_decision_time(int64_t new_decision_time);
-void tx_timeline_txbuf_filled(void);
+void tx_timeline_frame_ready(void);
 int start_timeline_manager(void);
 void stop_timeline_manager(void);
 

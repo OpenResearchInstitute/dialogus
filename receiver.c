@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "fec.h"
@@ -15,6 +16,7 @@
 #include "registers.h"
 #include "timestamp.h"
 
+extern bool software_rx_processing;
 extern void cleanup_and_exit(int retval);
 extern int init_udp_socket(void);
 extern struct iio_channel *rx0_i;
@@ -76,6 +78,9 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	struct iio_device *rx_dev;
 	struct iio_channel *rx_ch_i, *rx_ch_q;
 
+	// Allegedly, we need to clone the context and recreate all the
+	// already-initialized devices and channels, because IIO is not
+	// thread-safe.
 	rx_ctx = iio_context_clone(ctx);
 	if (!rx_ctx) {
 		printf("Failed to create receive context\n");
@@ -85,6 +90,9 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	// set the timeout to infinity; we may need to wait any length of time
 	// before the first frame of a transmission is received, so we need the
 	// receive buffer_refill to never time out.
+	//
+	// It appears that this particular setting doesn't carry forward to
+	// the cloned context.
 	int ret = iio_context_set_timeout(rx_ctx, 0);
 	if (ret < 0) {
 			char timeout_test[256];
@@ -104,7 +112,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	iio_channel_enable(rx_ch_i);
 	iio_channel_enable(rx_ch_q);
 
-	rx_buf = iio_device_create_buffer(rx_dev, OVP_DEMOD_FRAME_SIZE, false);
+	rx_buf = iio_device_create_buffer(rx_dev, software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!rx_buf) {
 		perror("Could not create RX buffer");
 		cleanup_and_exit(1);
@@ -124,10 +132,10 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 					cleanup_and_exit(1);
 				}
 		} else {
-			printf("OVP: streaming buffer_refill of %d bytes took %dms\n", nbytes_rx, get_timestamp_ms() - refill_ts_base);
+			printf("OVP: buffer_refill of %d bytes took %dms\n", nbytes_rx / 4, get_timestamp_ms() - refill_ts_base);
 
 			// nbytes_rx includes the three wasted bytes for each byte transferred via AXI-S
-			if (nbytes_rx != OVP_DEMOD_FRAME_SIZE * 4) {
+			if (nbytes_rx != (software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE) * 4) {
 				printf("Warning: unexpected rx frame size %d; discarded!\n", nbytes_rx);
 				continue;
 			}
@@ -143,22 +151,25 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 
 			// dump received buffer for visual check
 			printf("Received raw data @ %p: ", first);
-			for (int i=0; i < OVP_DEMOD_FRAME_SIZE; i++) {
+			for (int i=0; i < (software_rx_processing? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE); i++) {
 				printf("%02x ", received_frame[i]);
 			}
 			printf("\n");
 
-			// remove the interleaving so the decoder can do its work
-			deinterleave_ovp_frame(received_frame);
+			if (software_rx_processing) {
+				// remove the interleaving so the decoder can do its work
+				deinterleave_ovp_frame(received_frame);
 
-			// decode both parts of the frame
-			decode_ovp_header(received_frame, decoded_frame);
-			decode_ovp_payload(received_frame + OVP_ENCODED_HEADER_SIZE, decoded_frame + OVP_HEADER_SIZE);
+				// decode the whole frame
+				decode_ovp_frame(received_frame, decoded_frame);
 
-			// remove the randomization
-			randomize_ovp_frame(decoded_frame);
+				// remove the randomization
+				randomize_ovp_frame(decoded_frame);
+			} else {
+				memcpy(decoded_frame, received_frame, OVP_SINGLE_FRAME_SIZE);
+			}
 
-			//!!! dump received data for visual check
+			//!!! dump logical data for visual check
 			printf("Received processed data: ");
 			for (int i=0; i < OVP_SINGLE_FRAME_SIZE; i++) {
 				printf("%02x ", decoded_frame[i]);

@@ -9,6 +9,7 @@
         "altvoltage",
         "convolutional",
         "Deassert",
+        "decapsulated",
         "deinterleave",
         "demod",
         "dialogus",

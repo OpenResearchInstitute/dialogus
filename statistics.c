@@ -44,10 +44,6 @@ void print_ovp_statistics(void) {
 		printf("Dummy frames sent:   %d/%d (for %s)\n", 
 				dummy_frames_sent, hang_timer_frames, active_station_id_ascii);
 	}
-	if (ovp_frames_received > 0) {
-		printf("Success rate:        %.1f%%\n", 
-			(double)ovp_frames_processed / ovp_frames_received * 100.0);
-	}
 	printf("======================\n");
 }
 

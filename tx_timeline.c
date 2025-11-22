@@ -13,6 +13,7 @@
 #include "tx_timeline.h"
 
 
+extern bool software_tx_processing;
 extern bool stop;
 extern volatile int ovp_transmission_active;
 extern pthread_mutex_t tls_lock;
@@ -21,11 +22,12 @@ extern pthread_cond_t timeline_start;
 extern int64_t session_T0;
 extern bool hang_timer_active;
 extern int hang_timer_frames;
+extern uint8_t logical_frame_buffer[];
 extern uint8_t modulator_frame_buffer[];
 extern struct iio_buffer *txbuf;
-extern void create_postamble_frame(void);
-extern void create_dummy_frame(void);
-extern int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size);
+extern void create_postamble_logical_frame(void);
+extern void create_dummy_logical_frame(void);
+void process_ovp_frame_in_software(uint8_t *ovp_frame);
 extern int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size);
 extern void end_transmission_session_normally(void);
 
@@ -33,7 +35,7 @@ extern void end_transmission_session_normally(void);
 static pthread_t ovp_timeline_thread;
 
 static int64_t decision_time = 0;	// us timestamp after which a new frame is late
-static int ovp_txbufs_this_frame = 0;	// number of UDP frames seen before decision time (should be 1)
+static int frames_readied_for_push = 0;	// number of UDP frames seen before decision time (should be 1)
 
 
 // Call this function to set a new decision time.
@@ -41,14 +43,16 @@ void tx_timeline_set_decision_time(int64_t new_decision_time) {
 	decision_time = new_decision_time;
 }
 
-// Call this function each time a txbuf has been filled.
+// Call this function each time a transmit frame has been fully
+// prepared (in logical_frame_buffer, and also in modulator_frame_buffer
+// if software_tx_processing is enabled).
 // If it has not been called before the decision time, we don't have a
 // frame to transmit on time and must vamp with a dummy frame.
 // If it has been called more than once before the decision time,
-// all but the last one will have been overwritten; these lost
+// all but the last one will have been overwritten; the lost
 // frames are designated "untimely".
-void tx_timeline_txbuf_filled(void) {
-	ovp_txbufs_this_frame++;
+void tx_timeline_frame_ready(void) {
+	frames_readied_for_push++;
 }
 
 // OVP Timeline Manager thread
@@ -70,38 +74,43 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 				now = get_timestamp_us();
 				// printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
-					if (ovp_txbufs_this_frame > 0) {
-						// We've already put a real frame into txbuf at this point
-						if (ovp_txbufs_this_frame > 1) {
-							ovp_untimely_frames += ovp_txbufs_this_frame - 1;
-							printf("timeline @ %lld: frame + %d untimely frames ", get_timestamp_us() - session_T0, ovp_txbufs_this_frame - 1);
+					if (frames_readied_for_push > 0) {
+						if (frames_readied_for_push > 1) {
+							ovp_untimely_frames += frames_readied_for_push - 1;
+							printf("timeline @ %lld: frame + %d untimely frames\n", get_timestamp_us() - session_T0, frames_readied_for_push - 1);
 						} else {
-							printf("timeline @ %lld: frame ", get_timestamp_us() - session_T0);
+							printf("timeline @ %lld: frame\n", get_timestamp_us() - session_T0);
 						}
 						hang_time_dummy_count = 0;
 						hang_timer_active = false;
 					} else {
 						if (hang_time_dummy_count >= hang_timer_frames) {
-							create_postamble_frame();
-							printf("timeline @ %lld: postamble ", get_timestamp_us() - session_T0);
+							create_postamble_logical_frame();
+							printf("timeline @ %lld: postamble\n", get_timestamp_us() - session_T0);
 							hang_time_dummy_count = 0;
 							hang_timer_active = false;
 							ovp_transmission_active = 0;
 						} else {
-							create_dummy_frame();
-							printf("timeline @ %lld: dummy frame ", get_timestamp_us() - session_T0);
+							create_dummy_logical_frame();
+							printf("timeline @ %lld: dummy frame\n", get_timestamp_us() - session_T0);
 							ovp_dummy_frames_sent++;
 							hang_time_dummy_count++;
 							hang_timer_active = true;
 						}
-						process_ovp_payload_software(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
+					}
+
+					// Now on a common path for all outgoing frames: real, dummy, or postamble
+					if (software_tx_processing) {
+						process_ovp_frame_in_software(logical_frame_buffer);
 						load_ovp_frame_into_txbuf(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
+					} else {
+						load_ovp_frame_into_txbuf(logical_frame_buffer, OVP_SINGLE_FRAME_SIZE);
 					}
 					local_ts_base = get_timestamp_ms();
 					iio_buffer_push(txbuf);
 					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 					decision_time += 40e3;
-					ovp_txbufs_this_frame = 0;
+					frames_readied_for_push = 0;
 				}
 
 				// handle normal end of a transmission session (postamble was just pushed)
@@ -116,7 +125,6 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 			if (decision_time - now > 0) {
 				usleep(decision_time - now);	// wait until next decision time
 			}
-
 		}
 
 		printf("OVP: Timeline paused until next transmission\n");

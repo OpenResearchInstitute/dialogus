@@ -63,14 +63,47 @@ int hang_timer_frames = 25;	// Number of dummy frames before ending session
 static uint32_t session_ts_base = 0;	// timestamp at start of a session
 int64_t session_T0 = 0;	// Origin of time for this session (microseconds)
 
+// We support two different functional partitions for Opulent Voice radios.
+// The difference is in how much of the actual signal processing is done
+// in this software (running on the ARM core in the Zynq PS) vs how much
+// is done in the modem implemented in the FPGA hardware (the Zynq PL).
+//
+// If software_processing is true, this program converts between 134-byte
+// logical frames and 268-byte physical frames, exchanging the physical
+// frames with the modem.
+//
+// If software_processing is false, this program deals exclusively in
+// 134-byte logical frames, and any conversion between frame types
+// (such as randomization, forward error correction, and interleaving)
+// is handled by the modem hardware.
+//
+// We choose to implement this as a runtime switch instead of a #define
+// compile-time option, so that it can readily be controlled by a
+// user-supplied configuration file. However, we do not support changing
+// the setting on the fly. It must be set before the IIO buffers are
+// created, and never changed without restarting the program.
+//
+// For flexibility, we will make this switchable separately for the
+// transmitter and the receiver.
+//
+bool software_tx_processing = false;
+bool software_rx_processing = false;
+
+// OVP logical transmit frame buffer
+// This buffer is used whenever we build a frame for transmission.
+// It's a single global buffer to simplify the building of dummy
+// frames and postamble frames, which reuse the frame header from
+// immediately preceding frames.
+uint8_t logical_frame_buffer[OVP_SINGLE_FRAME_SIZE];
 
 // OVP modulator frame buffer
-// This buffer is used whenever we build a frame to send to the
-// modulator. It's global to simplify the building of dummy frames
-// and postamble frames, which reuse the sync word and frame header
-// from the preceding Opulent Voice frames.
+// This buffer is used whenever we convert a logical frame into the
+// physical format before sending it to the modulator. This is only
+// used when software_tx_processing is enabled.
+//
+// It's global for symmetry with logical_frame_buffer.
+//
 uint8_t modulator_frame_buffer[OVP_MODULATOR_FRAME_SIZE];
-
 
 // Opulent Voice Protocol functions (forward declarations)
 void start_transmission_session(void);
@@ -152,29 +185,43 @@ int disable_msk_transmission(void) {
 
 // Processing triggered by the arrival of a first frame after an idle period.
 void start_transmission_session(void) {
+	uint32_t local_ts_base;
+
 	if (ovp_transmission_active) {	// should never happen
-		return;	// Session already active
+		perror("Transmission session started while already active");
+		exit(1);
 	}
 
 	printf("OVP: Starting transmission session for station %s\n", active_station_id_ascii);
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
 	session_T0 = get_timestamp_us();	// used for timeline management
-	tx_timeline_set_decision_time(session_T0 + 60e3);	// 60ms to the middle of the next frame, T0-referenced
+	tx_timeline_set_decision_time(session_T0 + 40e3 + 20e3);	// preamble plus 20ms to the middle of the next frame, T0-referenced
 
-	// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
-	uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
+	// Time to send a preamble, here before sending the first frame of
+	// this new transmission session.
+	//
+	// If we are not doing software_tx_processing, we have no way to send
+	// a preamble to the transmitter, only logical frames. In that case,
+	// We have to assume that the modulator is set up to automatically send
+	// a preamble before the first frame of a transmission session.
+	if (software_tx_processing) {
+		// Send preamble: pure 1100 bit pattern for 40ms (no OVP header)
+		uint8_t preamble_frame[OVP_MODULATOR_FRAME_SIZE];	// Full 40ms of data
 
-	// Fill with 1100 repeating pattern (0xCC = 11001100 binary)
-	for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
-		preamble_frame[i] = 0xCC;	// 1100 1100 repeating
+		// Fill with 1100 repeating pattern (0xCC = 11001100 binary)
+		for (unsigned int i = 0; i < sizeof(preamble_frame); i++) {
+			preamble_frame[i] = 0xCC;	// 1100 1100 repeating
+		}
+
+		// Send preamble to MSK modulator (pure bit pattern, no header, no processing)
+		printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
+		load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
+		enable_msk_transmission();
+		push_txbuf_to_msk();	// special handling for preamble "frame" - bypasses processing
+	} else {
+		enable_msk_transmission();	// this should trigger automatic preamble generation
 	}
-
-	// Send preamble to MSK modulator (pure bit pattern, no framing)
-	printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
-	load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
-	enable_msk_transmission();
-	push_txbuf_to_msk();
 
 	ovp_transmission_active = 1;
 	ovp_sessions_started++;
@@ -233,87 +280,66 @@ void abort_transmission_session(void) {
 	}
 }
 
-//!!! DOES THIS WORK with randomizing and interleaving? Not sure.
-// Modify the frame leftover in modulator_frame_buffer to transform it
+// Modify the frame leftover in logical_frame_buffer to transform it
 // into a dummy frame, by replacing its payload with the encoded dummy payload.
-void create_dummy_frame(void) {
+void create_dummy_logical_frame(void) {
 	// The logical payload of a dummy frame is all zeroes.
-	// The COBS decoder will take this as termination of any previously open
-	// packet, followed by a bunch of zero-length packets (which are dropped).
-	static uint8_t ovp_dummy_payload[OVP_PAYLOAD_SIZE] = {  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-															0,0 };
-
-	// To save the trouble of encoding the dummy payload over and over,
-	// we will compute it just the first time and then store it here.
-	static uint8_t modulator_dummy_payload[OVP_ENCODED_PAYLOAD_SIZE];
-	static bool payload_computed = false;
-
-	// We are taking advantage of the fact that the payload of a dummy
-	// frame is always the same. Payload is all zeroes, and the convolutional
-	// encoding always gets the same encoded payload (it's used as a block code).
-	if (! payload_computed) {
-		encode_ovp_payload(ovp_dummy_payload, modulator_dummy_payload);
-		payload_computed = true;
-	}
-
-	// We are taking advantage of the modulator_frame_buffer being global,
-	// and dummy frames always coming after normal frames that were built
-	// in the modulator_frame_buffer. We only need to change the payload.
+	//
+	// The COBS decoder on the receiving end will take this as termination
+	// of any packet previously in progress (complete or not), followed by
+	// a bunch of zero-length packets (which are dropped).
+	//
+	// A series of dummy frames always follows at least one frame containing
+	// a real payload, which was handled in logical_frame_buffer. We can
+	// create an appropriate logical dummy frame by just overwriting the
+	// payload portion of logical_frame_buffer with zeroes.
 	//
 	// Note that this doesn't update the authentication tag in the frame.
 	// We are not able to do that in any case, since authentication is
 	// handled by Interlocutor, not this program. The air interface spec
 	// permits this behavior.
-	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
-	memcpy(p, modulator_dummy_payload, OVP_ENCODED_PAYLOAD_SIZE);
+	memset(logical_frame_buffer + OVP_HEADER_SIZE, 0x00, OVP_PAYLOAD_SIZE);
 }
 
-void create_postamble_frame(void) {
+// The payload of a postamble frame is filled with copies of the
+// 11-bit Barker code. Precompute this using this little Python snippet:
+/*
+barker11 = "11100010010"
+barkers = barker11 * 89
+postamble = [int(barkers[i:i+8],2) for i in range(0,122*8,8)]
+*/
+static uint8_t postamble_payload[OVP_PAYLOAD_SIZE] = {
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,	// e2 5c 4b 89 71 2e 25 c4 b8 97 12
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
+	226
+};
 
-	static uint8_t modulator_postamble_payload[OVP_ENCODED_PAYLOAD_SIZE];
-	static bool payload_computed = false;
 
-	// We are taking advantage of the fact that the payload of a postamble
-	// frame is always the same. Payload is fixed (copies of the barker-11
-	// code), and the convolutional encoding always gets the same encoded
-	// payload (it's used as a block code).
-	if (! payload_computed) {
-		// Fill payload with 11-bit Barker sequence: 11100010010
-		uint16_t barker_11 = 0x0712;	// 11100010010 in binary (right-aligned)
-
-		// Repeat Barker sequence throughout payload
-		int bit_pos = 0;
-		for (int i=0; i < OVP_ENCODED_PAYLOAD_SIZE; i++) {	// Fill payload section
-			uint8_t byte_val = 0;
-
-			for (int bit = 7; bit >= 0; bit--) {	// MSB first
-				// Get current bit from Barker sequence
-				int barker_bit = (barker_11 >> (bit_pos % 11)) & 1;
-				if (barker_bit) {
-					byte_val |= (1 << bit);
-				}
-				bit_pos++;
-			}
-			modulator_postamble_payload[i] = byte_val;
-		}
-		payload_computed = true;
-	}
-
-	//!!! DOES THIS WORK with scrambling, etc? 
-	// We are taking advantage of the modulator_frame_buffer being global,
-	// and the postamble frame always coming after other frames that were built
-	// in the modulator_frame_buffer. We only need to change the payload.
+// Modify the frame leftover in logical_frame_buffer to transform it
+// into a postamble frame, by replacing its payload with the distinctive
+// postamble payload.
+void create_postamble_logical_frame(void) {
+	// A postamble frame always follows at least one frame containing
+	// a real payload, and possibly a sequence of dummy frames, all of
+	// which were handled in logical_frame_buffer. We can create an
+	// appropriate logical postamble frame by just overwriting the
+	// payload portion of logical_frame_buffer with the distinctive
+	// postamble sequence.
 	//
 	// Note that this doesn't update the authentication tag in the frame.
 	// We are not able to do that in any case, since authentication is
-	// handled by Interlocutor, not this program.
-	uint8_t *p = modulator_frame_buffer + OVP_MODULATOR_PAYLOAD_OFFSET;
-	memcpy(p, modulator_postamble_payload, OVP_ENCODED_PAYLOAD_SIZE);
+	// handled by Interlocutor, not this program. The air interface spec
+	// permits this behavior.
+	memcpy(logical_frame_buffer + OVP_HEADER_SIZE, postamble_payload, OVP_PAYLOAD_SIZE);
 }
 
 
@@ -333,13 +359,10 @@ int init_ovp_udp_listener(void) {
 }
 
 // Validate OVP frame format
-int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
-	if (frame_size < OVP_HEADER_SIZE) {
-		printf("OVP: Frame too short (%zu bytes)\n", frame_size);
-		return -1;
-	}
+int validate_ovp_frame(uint8_t *frame_data) {
 
-	// Check magic bytes (0xBBAADD) (dummy for authentication token check)
+
+	// Check magic bytes (0xBBAADD) (!!! dummy for authentication token check)
 	uint32_t magic = (frame_data[6] << 16) | (frame_data[7] << 8) | frame_data[8];
 	if (magic != OVP_MAGIC_BYTES) {
 		printf("OVP: Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
@@ -355,106 +378,59 @@ int validate_ovp_frame(uint8_t *frame_data, size_t frame_size) {
 
 
 // Process OVP frame payload through software pipeline
-int process_ovp_payload_software(uint8_t *ovp_frame, size_t frame_size) {
-	int count = 0;
+void process_ovp_frame_in_software(uint8_t *ovp_frame) {
 	uint8_t randomized_frame[OVP_SINGLE_FRAME_SIZE];
-
-	if (frame_size != OVP_SINGLE_FRAME_SIZE) {
-		printf("OVP: Wrong frame size %d\n", frame_size);
-		return -1;
-	}
 
 	// apply randomization to reduce spectral features of the data
 	memcpy(randomized_frame, ovp_frame, OVP_SINGLE_FRAME_SIZE);
 	randomize_ovp_frame(randomized_frame);
 
-	uint8_t encoded_header[OVP_ENCODED_HEADER_SIZE];
-	encode_ovp_header(randomized_frame, encoded_header);
-
-	uint8_t encoded_payload[OVP_ENCODED_PAYLOAD_SIZE];
-	encode_ovp_payload(randomized_frame + OVP_HEADER_SIZE, encoded_payload);
-
-	uint8_t *p = modulator_frame_buffer;
-
-	// Components of a transmitted OVP frame:
-	memcpy(p, encoded_header, OVP_ENCODED_HEADER_SIZE);
-	p += OVP_ENCODED_HEADER_SIZE;
-	count += OVP_ENCODED_HEADER_SIZE;
-
-	memcpy(p, encoded_payload, OVP_ENCODED_PAYLOAD_SIZE);
-	count += OVP_ENCODED_PAYLOAD_SIZE;
-
-	if (count != OVP_MODULATOR_FRAME_SIZE) {
-		printf("OVP: Modulator frame size %d does not match expected %d\n", count, OVP_MODULATOR_FRAME_SIZE);
-		return -1;
-	}
+	// One FEC over the whole frame
+	encode_ovp_frame(randomized_frame, modulator_frame_buffer);
 
 	// apply interleaving to break up block errors at the decoder(s)
 	interleave_ovp_frame(modulator_frame_buffer);
 
 	// The modulator_frame_buffer now contains the full modulator frame
 	// ready for transmission via MSK modulator
-	return 0;
+	ovp_frames_processed++;
 }
 
 
-// Complete processing and send an OVP frame to MSK modulator
-int process_and_send_ovp_frame_to_txbuf(uint8_t *frame_data, size_t frame_size) {
-
-	// Process the frame (no preamble/postamble per frame)
-	int result;
-	result = process_ovp_payload_software(frame_data, frame_size);
-
-	if (result == 0) {
-		// Preload txbuf with the OVP frame. We'll push it at the decision time.
-		// If we've already preloaded txbuf for this frame slot, this overwrites.
-		load_ovp_frame_into_txbuf(modulator_frame_buffer, sizeof(modulator_frame_buffer));
-		tx_timeline_txbuf_filled();	// notify the timeline to detect underruns/overwrites.
-		// Do not push_txbuf_to_msk() at this time. In case of overwrites,
-		// we want to transmit the last one only.
-	}
-
-	if (result == 0) {
-		ovp_frames_processed++;
-	} else {
-		ovp_frame_errors++;
-	}
-
-	return result;
-}
-
-
-// Process complete OVP frame (keeping a copy of the station ID)
-int process_ovp_frame(uint8_t *frame_data, size_t frame_size) {
-	int result;
-
+// Accept a complete OVP frame from the encapsulated stream
+// (keeping a copy of the station ID)
+void accept_decapsulated_frame(uint8_t *frame_data) {
 	ovp_frames_received++;
 
 	// Validate frame
-	if (validate_ovp_frame(frame_data, frame_size) < 0) {
+	if (validate_ovp_frame(frame_data) < 0) {
 		ovp_frame_errors++;
-		return -1;
+		return;
 	}
 
-	// Extract and store station ID for regulatory compliance
+	// Extract and store station ID for regulatory compliance, etc.
 	save_header_station_id(frame_data);
 
-	// Real frame received - cancel hang timer
+	// Real frame received - cancel hang timer if running
 	if (hang_timer_active) {
-		printf("OVP: Real frame received from %s, canceling hang timer\n", active_station_id_ascii);
+		printf("OVP: canceling hang timer\n");
 		hang_timer_active = false;
 		dummy_frames_sent = 0;
 	}
+
+	// Copy the decapsulated frame into processing buffer
+	memcpy(logical_frame_buffer, frame_data, OVP_SINGLE_FRAME_SIZE);
 
 	// Start transmission session if not active
 	if (!ovp_transmission_active) {
 		start_transmission_session();
 	}
 
-	printf("OVP: Processing real frame %zu bytes from %s\n", frame_size, active_station_id_ascii);
+	printf("OVP: Accepted real frame from %s\n", active_station_id_ascii);
 
-	result = process_and_send_ovp_frame_to_txbuf(frame_data, frame_size);
-	return result;
+	tx_timeline_frame_ready();	// notify the timeline to detect underruns/overwrites.
+
+	// additional processing will take place at decision time
 }
 
 

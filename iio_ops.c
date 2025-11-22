@@ -12,6 +12,7 @@
 #include "registers.h"
 #include "timestamp.h"
 
+extern bool software_tx_processing;
 extern void cleanup_and_exit(int retval);
 
 
@@ -225,7 +226,7 @@ void iio_setup(void)
 	}
 
 	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
-	txbuf = iio_device_create_buffer(tx, OVP_MODULATOR_FRAME_SIZE, false);
+	txbuf = iio_device_create_buffer(tx, software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!txbuf) {
 		perror("Could not create TX buffer");
 		cleanup_and_exit(1);
@@ -290,7 +291,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 		exit(1);
 	}
 
-	if (!frame_data || frame_size != OVP_MODULATOR_FRAME_SIZE) {
+	if (!frame_data || frame_size != (software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE)) {
 		printf("OVP: Error - invalid frame data\n");
 		exit(1);
 	}
@@ -308,6 +309,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 	// Track how much frame data we've sent
 	size_t frame_offset = 0;
 
+	printf("Tracing load_ovp_frame_into_txbuf: ");
 	// Fill TX buffer with frame data bytes
 	// The MSK modulator expects raw data bytes, not I/Q samples
 	// It will internally convert to MSK I/Q modulation
@@ -318,6 +320,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 			// Use both I and Q channels to send 32 bits total per sample
 			uint8_t data_byte = frame_data[frame_offset];
 
+			printf("%02x ", data_byte);
 			// Pack byte into 16-bit I/Q format for MSK modulator input.
 			// MSK will process this as bit data, not as I/Q samples.
 			// If TX_DATA_WIDTH is 8, use the low byte of the I channel.
@@ -335,6 +338,7 @@ int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 			((int16_t*)p_dat)[1] = 0;
 		}
 	}
+	printf("\n");
 
 	return 0;
 }

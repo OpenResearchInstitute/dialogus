@@ -13,7 +13,7 @@
 #define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
 #define RF_BANDWIDTH MHZ(1)	// Must be at least the signal bandwidth + twice the IF_FREQUENCY
 
-// Sizes for encapsulated Opulent Voice frames
+// Size for encapsulated Opulent Voice frames
 #define OVP_SINGLE_FRAME_SIZE 134	// Opulent Voice Protocol Packet Size
 
 // Opulent Voice Protocol constants
@@ -35,5 +35,10 @@
 // Assuming that the demod only strips off the frame sync word and does no other processing
 #define OVP_DEMOD_FRAME_SIZE (OVP_ENCODED_HEADER_SIZE + OVP_ENCODED_PAYLOAD_SIZE)
 #define OVP_DEMOD_PAYLOAD_OFFSET (OVP_ENCODED_HEADER_SIZE)
+
+// Register value (in bit times) for the desired length of preamble sent at the
+// start of each transmission session. This is only applicable when software_tx_processing
+// is disabled; otherwise we make up a fake frame that contains the preamble and send that.
+#define TX_SYNC_COUNT (271 * 8)
 
 #endif // NUMEROLOGY_H

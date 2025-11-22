@@ -1,12 +1,14 @@
 
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 
 #include "numerology.h"
 #include "registers.h"
 
+extern bool software_tx_processing;
 
 // one bit time is 19 microseconds
 float num_microseconds_between_writes_to_same_register = 5*20;
@@ -21,14 +23,20 @@ void msk_setup(void)
 	printf("Reading from MSK block HASH ID HIGH: (0x%08x@%04x)\n", READ_MSK(Hash_ID_High), OFFSET_MSK(Hash_ID_High));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
-
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_DISABLE);
-	WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_DISABLE);
-	printf("Reading TX_SYNC_CTRL. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Ctrl), OFFSET_MSK(Tx_Sync_Ctrl));
-	// printf("Configure the TX_SYNC_CNT register to TX_SYNC_COUNT bit times.\n");
-	// WRITE_MSK(Tx_Sync_Cnt, TX_SYNC_COUNT);
-	// printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
+	if (software_tx_processing) {
+		printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_DISABLE);
+		WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_DISABLE);
+		printf("Reading TX_SYNC_CTRL. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Ctrl), OFFSET_MSK(Tx_Sync_Ctrl));
+	} else {
+		printf("Configure the TX_SYNC_CTRL register to 0x%08x.\n", TX_SYNC_CTRL_AUTO);
+		WRITE_MSK(Tx_Sync_Ctrl, TX_SYNC_CTRL_AUTO);
+		printf("Reading TX_SYNC_CTRL. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Ctrl), OFFSET_MSK(Tx_Sync_Ctrl));
+
+		printf("Configure the TX_SYNC_CNT register to TX_SYNC_COUNT bit times.\n");
+		WRITE_MSK(Tx_Sync_Cnt, TX_SYNC_COUNT);
+		printf("Reading TX_SYNC_CNT. We see: (0x%08x@%04x)\n", READ_MSK(Tx_Sync_Cnt), OFFSET_MSK(Tx_Sync_Cnt));
+	}
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
 	printf("Initial FIFOs before INIT: tx fifo: %08x rx fifo: %08x\n",
