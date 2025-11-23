@@ -3,8 +3,14 @@
 
 
 #include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 extern pthread_t ovp_rx_thread;
+
+extern uint64_t ovp_refill_count;
+extern uint64_t ovp_refill_error_count;
+extern uint64_t ovp_forwarded_count;
 
 int start_ovp_receiver(void);
 void stop_ovp_receiver(void);

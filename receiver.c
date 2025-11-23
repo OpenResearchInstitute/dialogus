@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "fec.h"
@@ -15,13 +16,20 @@
 #include "receiver.h"
 #include "registers.h"
 #include "timestamp.h"
+#include "udp_encap.h"
 
 extern bool software_rx_processing;
 extern void cleanup_and_exit(int retval);
 extern int init_udp_socket(void);
+extern struct sockaddr_in udp_client_addr;
 extern struct iio_channel *rx0_i;
 extern struct iio_context *ctx;
 extern bool stop;
+
+uint64_t ovp_refill_count = 0;
+uint64_t ovp_refill_error_count = 0;
+uint64_t ovp_forwarded_count = 0;
+
 
 // Receiver thread
 // The receiver thread pulls frames of data from IIO and eventually
@@ -123,12 +131,14 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 		// Refill RX buffer
 		refill_ts_base = get_timestamp_ms();
 		nbytes_rx = iio_buffer_refill(rx_buf);
+		ovp_refill_count++;
 		if (nbytes_rx < 0) {
 				if (nbytes_rx == -ETIMEDOUT) {
 					printf("Refill timeout (no sync word yet?)\n");
 					nbytes_rx = 0;
 				} else {
 					printf("Error refilling buf %d\n",(int) nbytes_rx);
+					ovp_refill_error_count++;
 					cleanup_and_exit(1);
 				}
 		} else {
@@ -137,6 +147,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 			// nbytes_rx includes the three wasted bytes for each byte transferred via AXI-S
 			if (nbytes_rx != (software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE) * 4) {
 				printf("Warning: unexpected rx frame size %d; discarded!\n", nbytes_rx);
+				ovp_refill_error_count++;
 				continue;
 			}
 
@@ -181,11 +192,8 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 				continue;
 			}
 
-			// !!! add encapsulation and network transmission here
-
-
-
-
+			forward_encap_frame(decoded_frame, OVP_SINGLE_FRAME_SIZE);
+			ovp_forwarded_count++;
 		}
 	}
 
@@ -237,4 +245,8 @@ void stop_ovp_receiver(void) {
 
 void receiver_ok_to_forward_frames(bool ok) {
     encapsulated_frame_host_known = ok;
+
+	if (ok) {
+		register_encap_address(&udp_client_addr);
+	}
 }

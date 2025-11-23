@@ -37,6 +37,8 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 
 	while (udp_listener_running) {
 
+		udp_client_len = sizeof(udp_client_addr);	// length passed in to recvfrom
+
 		udp_bytes_received = recvfrom(
 			ovp_udp_socket,
 			ovp_frame_buffer,

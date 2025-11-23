@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "frame_header.h"
+#include "receiver.h"
 #include "statistics.h"
 
 // OVP Statistics
@@ -20,31 +21,34 @@ extern bool hang_timer_active;
 extern int dummy_frames_sent;
 extern int hang_timer_frames;
 
-
 // OVP periodic reporting thread mechanisms
 static pthread_t ovp_reporter_thread;
 extern bool stop;
 extern pthread_mutex_t timeline_lock;
 
 void print_ovp_statistics(void) {
-	printf("\n=== OVP Statistics ===\n");
-	printf("Frames received:     %llu\n", (unsigned long long)ovp_frames_received);
-	printf("Frames processed:    %llu\n", (unsigned long long)ovp_frames_processed);
-	printf("Frame errors:        %llu\n", (unsigned long long)ovp_frame_errors);
-	printf("Untimely frames:     %llu\n", (unsigned long long)ovp_untimely_frames);
-	printf("Dummy frames sent:   %llu\n", (unsigned long long)ovp_dummy_frames_sent);
-	printf("Sessions started:    %llu\n", (unsigned long long)ovp_sessions_started);
-	printf("Sessions ended:      %llu\n", (unsigned long long)ovp_sessions_ended);
-	printf("Active session:      %s\n", ovp_transmission_active ? "YES" : "NO");
+	printf("\n======= OVP TX Statistics =======\n");
+	printf("UDP Frames received:      %llu\n", (unsigned long long)ovp_frames_received);
+	printf("UDP Frames processed:     %llu\n", (unsigned long long)ovp_frames_processed);
+	printf("UDP Frame errors:         %llu\n", (unsigned long long)ovp_frame_errors);
+	printf("Untimely frames:          %llu\n", (unsigned long long)ovp_untimely_frames);
+	printf("Total Dummy frames sent:  %llu\n", (unsigned long long)ovp_dummy_frames_sent);
+	printf("Tx Sessions started:      %llu\n", (unsigned long long)ovp_sessions_started);
+	printf("Tx Sessions ended:        %llu\n", (unsigned long long)ovp_sessions_ended);
+	printf("Active Tx session:        %s\n", ovp_transmission_active ? "YES" : "NO");
 	if (ovp_transmission_active) {
-		printf("Active station ID:   %s\n", active_station_id_ascii);
+		printf("Active station ID:       %s\n", active_station_id_ascii);
 	}
-	printf("Hang timer active:   %s\n", hang_timer_active ? "YES" : "NO");
+	printf("Hang timer active:        %s\n", hang_timer_active ? "YES" : "NO");
 	if (hang_timer_active) {
-		printf("Dummy frames sent:   %d/%d (for %s)\n", 
+		printf("Dummy frames sent:         %d of %d (for %s)\n", 
 				dummy_frames_sent, hang_timer_frames, active_station_id_ascii);
 	}
-	printf("======================\n");
+	printf("\n======= OVP RX Statistics =======\n");
+	printf("Total Frames Received:    %llu\n", (unsigned long long)ovp_refill_count);
+	printf("Wrong Length Frames:      %llu\n", (unsigned long long)ovp_refill_error_count); 
+	printf("Forwarded Frames:         %llu\n", (unsigned long long)ovp_forwarded_count);
+	printf("=================================\n");
 }
 
 // OVP Periodic Statistics Reporter thread
