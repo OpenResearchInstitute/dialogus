@@ -1,5 +1,6 @@
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -21,7 +22,10 @@ struct sockaddr_in udp_encap_destination;
 // UDP listener calls this when it knows the address that's sending us encapsulated frames
 void register_encap_address(struct sockaddr_in *address) {
     udp_encap_destination = *address;
-    udp_encap_destination.sin_port = OVP_UDP_PORT;  // don't reply to originating port
+    udp_encap_destination.sin_port = htons(OVP_UDP_PORT);  // don't reply to originating port
+    printf("Registered encap destination %s:%d\n",
+                inet_ntoa(udp_encap_destination.sin_addr),
+				ntohs(udp_encap_destination.sin_port));
 }
 
 // Receiver cal
@@ -39,7 +43,7 @@ void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
             udp_client_len
         );
     if (bytes_sent < 0) {
-        printf("Error sending encapsulated frame\n");        
+        printf("Error sending encapsulated frame = %d\n", errno);        
     } else if (bytes_sent != length) {
         perror("Sent only part of an encapsulated frame");
         cleanup_and_exit(1);
