@@ -306,6 +306,10 @@ barker11 = "11100010010"
 barkers = barker11 * 89
 postamble = [int(barkers[i:i+8],2) for i in range(0,122*8,8)]
 */
+// We replace the last byte with zero because that acts as a COBS
+// frame delimiter, preventing the preambles from stacking up in the
+// COBS decoder and interfering with the first frame of the next
+// transmission.
 static uint8_t postamble_payload[OVP_PAYLOAD_SIZE] = {
 	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,	// e2 5c 4b 89 71 2e 25 c4 b8 97 12
 	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
@@ -318,7 +322,7 @@ static uint8_t postamble_payload[OVP_PAYLOAD_SIZE] = {
 	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
 	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
 	226, 92, 75, 137, 113, 46, 37, 196, 184, 151, 18,
-	226
+	0
 };
 
 
