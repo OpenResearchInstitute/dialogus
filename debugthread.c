@@ -30,10 +30,11 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 		uint32_t now;
 
 		pthread_mutex_lock(&timeline_lock);
+
 			now = get_timestamp_ms();
-//			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
-//							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
-//							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
+			printf("debugthread fifo at %d ms: tx fifo: %08x rx fifo: %08x\n", now,
+							capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+							capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
 			printf("debugthread power at %d %d ", now,
 							capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
@@ -48,6 +49,9 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 //				frame_sync_errors,
 //				frame_sync_locked ? "LOCKED" : "unlocked",
 //				frame_buffer_overflow ? "OVERFLOW" : "");
+			printf("debugthread axis at %d ms: axis_xfer_count = 0x%08x\n", now, 
+					capture_and_read_msk(OFFSET_MSK(axis_xfer_count)));
+
 		pthread_mutex_unlock(&timeline_lock);
 
 		usleep(10000);

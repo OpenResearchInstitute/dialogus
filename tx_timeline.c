@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "numerology.h"
+#include "registers.h"
 #include "statistics.h"
 #include "timestamp.h"
 #include "tx_timeline.h"
@@ -107,8 +108,16 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 						load_ovp_frame_into_txbuf(logical_frame_buffer, OVP_SINGLE_FRAME_SIZE);
 					}
 					local_ts_base = get_timestamp_ms();
-					iio_buffer_push(txbuf);
+					ssize_t result = iio_buffer_push(txbuf);
 					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					if (result < 0) {
+						printf("OVP: Error pushing buffer to MSK: %zd\n", result);
+					}
+					printf("After push, at %d, axis_xfer_count = 0x%08x tx_bit_count = 0x%08x\n",
+							get_timestamp_ms(),
+							capture_and_read_msk(OFFSET_MSK(axis_xfer_count)),
+							capture_and_read_msk(OFFSET_MSK(Tx_Bit_Count)));
+
 					decision_time += 40e3;
 					frames_readied_for_push = 0;
 				}

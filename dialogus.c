@@ -151,6 +151,11 @@ static void handle_sig(int sig)
 
 // Enable PTT and start MSK transmission
 int enable_msk_transmission(void) {
+
+	printf("OVP: Enabling transmit chain\n");
+	WRITE_MSK(MSK_Init, 0x00000000);  // Deassert txinit    
+	usleep(100);  // might not be needed?
+
 	WRITE_MSK(MSK_Control, 0x00000001);	// PTT on, loopback off
 
 	// Small delay to let hardware settle
@@ -170,6 +175,9 @@ int disable_msk_transmission(void) {
 
 	uint32_t status = READ_MSK(MSK_Status);
 	printf("OVP: MSK_Status after PTT disable: 0x%08x\n", status);
+
+	printf("OVP: Disabling transmit chain\n");
+	WRITE_MSK(MSK_Init, 0x00000002);  // Assert txinit (bit 1)    
 
 	return 0;
 }

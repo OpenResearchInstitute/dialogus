@@ -188,9 +188,14 @@ void msk_setup(void)
 	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
 	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
+	printf("FIFOs during INIT: tx fifo: %08x rx fifo: %08x\n",
+						capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
+						capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
+
+
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-	printf("Deassert INIT: Write 0 to MSK_INIT\n");
-	WRITE_MSK(MSK_Init, 0x00000000);
+	printf("Deassert overall INIT, assert tx INIT: Write 2 to MSK_INIT\n");
+	WRITE_MSK(MSK_Init, 0x00000002);
 	printf("Read MSK_INIT: (0x%08x@%04x)\n", READ_MSK(MSK_Init), OFFSET_MSK(MSK_Init));
 
 	printf("Initial FIFOs at INIT: tx fifo: %08x rx fifo: %08x\n",

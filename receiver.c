@@ -100,7 +100,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	// receive buffer_refill to never time out.
 	//
 	// It appears that this particular setting doesn't carry forward to
-	// the cloned context.
+	// the cloned context, so it needs to be set anyway.
 	int ret = iio_context_set_timeout(rx_ctx, 0);
 	if (ret < 0) {
 			char timeout_test[256];
