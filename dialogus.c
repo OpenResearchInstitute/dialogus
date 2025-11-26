@@ -202,8 +202,12 @@ void start_transmission_session(void) {
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
 	session_T0 = get_timestamp_us();	// used for timeline management
-	tx_timeline_set_decision_time(session_T0 + 40e3 + 20e3);	// preamble plus 20ms to the middle of the next frame, T0-referenced
-
+	if (software_tx_processing) {
+		tx_timeline_set_decision_time(session_T0 + 40e3 + 20e3);	// preamble plus 20ms to the middle of the next frame, T0-referenced
+	} else {
+		tx_timeline_set_decision_time(session_T0 + 20e3);	// 20ms to the middle of the next frame, T0-referenced
+	}
+	
 	// Time to send a preamble, here before sending the first frame of
 	// this new transmission session.
 	//
