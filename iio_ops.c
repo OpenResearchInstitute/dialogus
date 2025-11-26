@@ -212,12 +212,11 @@ void iio_setup(void)
 		exit(1);
 	}
 
-	// set the timeout to infinity; we may need to wait any length of time
-	// before the first frame of a transmission is received, so we need the
-	// receive buffer_refill to never time out.
-	// However, it appears that this setting does not get copied when we
-	// clone the context for receive. So we will have to set it again later.
-	ret = iio_context_set_timeout(ctx, 0);
+
+	// Set the timeout to 1 second. This will apply for transmit buffer
+	// pushes. For receive, we will have cloned the context and changed
+	// its timeout to infinity.
+	ret = iio_context_set_timeout(ctx, 1000);
 	if (ret < 0) {
 		char timeout_test[256];
 		iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
