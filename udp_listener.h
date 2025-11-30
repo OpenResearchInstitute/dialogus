@@ -2,7 +2,7 @@
 #define UDP_LISTENER_H
 
 
-int start_ovp_listener(void);
-void stop_ovp_listener(void);
+extern int start_ovp_listener(void);
+extern void stop_ovp_listener(void);
 
 #endif // UDP_LISTENER_H

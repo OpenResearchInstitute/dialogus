@@ -357,21 +357,6 @@ void create_postamble_logical_frame(void) {
 }
 
 
-
-
-// Initialize OVP UDP listener
-int init_ovp_udp_listener(void) {
-
-	if (init_udp_socket()) {
-		printf("Error initializing UDP socket\n");
-		return -1;
-	} else {
-		printf("OVP: UDP listener initialized on port %d\n", OVP_UDP_PORT);
-	}
-
-	return 0;
-}
-
 // Validate OVP frame format
 int validate_ovp_frame(uint8_t *frame_data) {
 

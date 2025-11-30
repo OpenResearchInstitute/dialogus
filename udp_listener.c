@@ -18,7 +18,6 @@ extern struct sockaddr_in udp_client_addr;
 extern socklen_t udp_client_len;
 extern pthread_mutex_t timeline_lock;	// shared by all threads
 extern void accept_decapsulated_frame(uint8_t *frame_data);
-extern int init_ovp_udp_listener(void);
 
 static pthread_t ovp_udp_thread;
 
@@ -86,6 +85,21 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 	printf("OVP: UDP listener thread exiting\n");
 	return NULL;
 }
+
+
+// Initialize OVP UDP listener
+int init_ovp_udp_listener(void) {
+
+	if (init_udp_socket()) {
+		printf("Error initializing UDP socket\n");
+		return -1;
+	} else {
+		printf("OVP: UDP listener initialized on port %d\n", OVP_UDP_PORT);
+	}
+
+	return 0;
+}
+
 
 // Start OVP UDP listener
 int start_ovp_listener(void) {

@@ -21,6 +21,7 @@
 #define OVP_HEADER_SIZE 12
 #define OVP_PAYLOAD_SIZE 122
 #define OVP_UDP_PORT 57372
+#define OVP_TCP_PORT 57372
 #define OVP_FRAME_PERIOD_MS 40	// Fixed 40ms timing
 
 // Sizes for final over-the-air frames sent to MSK modulator
