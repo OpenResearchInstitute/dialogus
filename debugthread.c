@@ -95,7 +95,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 
 		pthread_mutex_unlock(&timeline_lock);
 
-		usleep(100);
+		usleep(10000);
 	}
 	printf("debug thread exiting\n");
 	return NULL;
