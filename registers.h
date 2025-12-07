@@ -23,10 +23,6 @@
 #define PERIPH_BASE 0xf8f00000
 #define GLOBAL_TMR_UPPER_OFFSET 0x0204
 #define GLOBAL_TMR_LOWER_OFFSET 0x0200
-/* Global Timer runs on the CPU clock, divided by 2 */
-#define COUNTS_PER_SECOND (666666687 / 2 / 2)
-/* Collect telementry and make decisions after this duration */
-#define REPORTING_INTERVAL (COUNTS_PER_SECOND / 1000)
 
 
 // Addresses of the DMACs via their AXI lite control interface register blocks
