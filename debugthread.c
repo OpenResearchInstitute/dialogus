@@ -25,8 +25,8 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 	bool frame_buffer_overflow __attribute__((unused));
 	uint32_t frames_received __attribute__((unused)) = 0;
 	uint32_t frame_sync_errors __attribute__((unused)) = 0;
-	char *tx_state_names[8] = { "IDLE", "COLLECT", "ENC_START", "ENC_RUN", "ENC_FLUSH", "INTERLEAVE", "OUTPUT", "iNvALiD" };
-	char *rx_state_names[8] = { "IDLE", "COLLECT", "EXTRACT", "DEINTERLEAVE", "PREP_FEC_DECODE", "DERANDOMIZE", "InVaLiD" };
+	char *tx_state_names[8] = { "IDLE", "COLLECT", "RANDOMIZE", "PREP_FEC", "FEC_ENCODE", "INTERLEAVE", "OUTPUT", "iNvALiD" };
+	char *rx_state_names[8] = { "IDLE", "COLLECT", "EXTRACT", "DEINTERLEAVE", "PREP_FEC_DECODE", "FEC_DECODE", "DERANDOMIZE", "OUTPUT" };
 
 
 	while (!stop) {
