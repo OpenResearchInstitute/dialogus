@@ -2,9 +2,28 @@
 CC := arm-linux-gnueabihf-gcc
 CFLAGS := -mfloat-abi=hard --sysroot=$(HOME)/pluto-0.38.sysroot -g -lpthread -liio -lm -Wall -Wextra
 
-SOURCES := dialogus.c registers.c statistics.c debugthread.c timestamp.c debug_utils.c receiver.c randomizer.c fec.c interleaver.c udp_listener.c udp_socket.c frame_header.c tx_timeline.c iio_ops.c msk_setup.c udp_encap.c
+SOURCES := \
+	debug_utils.c \
+	debugthread.c \
+	dialogus.c \
+	fec.c \
+	frame_header.c \
+	iio_ops.c \
+	interleaver.c \
+	msk_setup.c \
+	randomizer.c \
+	receiver.c \
+	registers.c \
+	statistics.c \
+	timestamp.c \
+	tx_timeline.c \
+	udp_encap.c \
+	udp_listener.c \
+	udp_socket.c
+
 OBJ_DIR := obj
 OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(SOURCES))
+DEPS = $(patsubst %.c,$(OBJ_DIR)/%.d,$(SOURCES))
 BIN_DIR := bin
 
 # Get git revision and pass as a define to the compiler and also add to name of the binary
@@ -14,7 +33,7 @@ GIT_CFLAGS := -DDIALOGUS_VERSION=\"$(GIT_DESCRIBE)\"
 TARGET_NAME = dialogus_$(GIT_DESCRIBE)
 TARGET = $(BIN_DIR)/$(TARGET_NAME)
 
-.PHONY: all clean run
+.PHONY: all clean
 
 all: $(BIN_DIR) $(OBJ_DIR) $(TARGET)
 
@@ -27,10 +46,14 @@ $(OBJ_DIR):
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@
 
-# Rule for compiling .c files into .o files
+CPPFLAGS = -MMD -MP
+
+# Rule for compiling .c files into .o files plus .d dependency files
 $(OBJ_DIR)/%.o: %.c
-	$(CC) $(CFLAGS) $(GIT_CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(GIT_CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 # Clean target to remove build artifacts
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(OBJS) $(DEPS)
+
+-include $(DEPS)
