@@ -41,7 +41,6 @@ uint64_t get_timestamp(void) {
 			printf("Global timer counts_per_second appears to be %.2f\n", counts_per_second);
 		}
 		pclose(f);
-		printf("Closed\n");
 	}
 
 	// Reading global timer counter register
