@@ -70,11 +70,15 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 	while (!stop) {
 		while (ovp_transmission_active) {
 			// printf("timeline grabbing mutex\n");
+			printf("MUTEX timeline_lock: locking in timeline at %d\n", get_timestamp_ms());
 			pthread_mutex_lock(&timeline_lock);
+			printf("MUTEX timeline_lock: acquired in timeline at %d\n", get_timestamp_ms());
+
 			if (decision_time != 0) {
 				now = get_timestamp_us();
-				// printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
+				printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
+					printf("Decision time is now at %d\n", get_timestamp_ms());
 					if (frames_readied_for_push > 0) {
 						if (frames_readied_for_push > 1) {
 							ovp_untimely_frames += frames_readied_for_push - 1;
@@ -102,13 +106,17 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 
 					// Now on a common path for all outgoing frames: real, dummy, or postamble
 					if (software_tx_processing) {
+						printf("Attempting software processing at %d\n", get_timestamp_ms());
 						process_ovp_frame_in_software(logical_frame_buffer);
 						load_ovp_frame_into_txbuf(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
 					} else {
+						printf("Letting the hardware handle processing at %d\n", get_timestamp_ms());
 						load_ovp_frame_into_txbuf(logical_frame_buffer, OVP_SINGLE_FRAME_SIZE);
 					}
 					local_ts_base = get_timestamp_ms();
+					printf("Before push at %d\n", get_timestamp_ms());
 					ssize_t result = iio_buffer_push(txbuf);
+					printf("After push as %d\n", get_timestamp_ms());
 					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 					if (result < 0) {
 						printf("OVP: Error pushing buffer to MSK: %zd\n", result);
@@ -127,10 +135,14 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 					end_transmission_session_normally();
 				}
 			}
+
+			printf("MUTEX RELEASE in timeline at %d\n", get_timestamp_ms());
 			pthread_mutex_unlock(&timeline_lock);
+			printf("MUTEX RELEASED in timeline at %d\n", get_timestamp_ms());
 			// printf("timeline released mutex\n");
 
 			now = get_timestamp_us();
+			printf("Getting ready to wait for decision time at %d\n", get_timestamp_ms());
 			if (decision_time - now > 0) {
 				usleep(decision_time - now);	// wait until next decision time
 			}

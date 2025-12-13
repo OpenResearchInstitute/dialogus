@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "debug_printf.h"
 #include "iio_ops.h"
 #include "numerology.h"
 #include "radio.h"
@@ -128,14 +129,14 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	struct iio_channel *chn = NULL;
 
 	// Configure phy and lo channels
-	printf("* Acquiring AD9361 phy channel %d\n", chid);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring AD9361 phy channel %d\n", chid);
 	if (!get_phy_chan(type, chid, &chn)) {	return false; }
 	wr_ch_str(chn, "rf_port_select",     cfg->rf_port);
 	wr_ch_lli(chn, "rf_bandwidth",       cfg->bw_hz);
 	wr_ch_lli(chn, "sampling_frequency", cfg->fs_hz);
 
 	// Configure LO channel
-	printf("* Acquiring AD9361 %s lo channel\n", type == TX ? "TX" : "RX");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring AD9361 %s lo channel\n", type == TX ? "TX" : "RX");
 	if (!get_lo_chan(type, &chn)) { return false; }
 	wr_ch_lli(chn, "frequency", cfg->lo_hz);
 	return true;
@@ -162,25 +163,25 @@ void iio_setup(void)
 	txcfg.lo_hz = LO_FREQ;
 	txcfg.rf_port = "A";	// port A (select for rf freq.)
 
-	printf("* Acquiring IIO context\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring IIO context\n");
 	IIO_ENSURE((ctx = iio_create_default_context()) && "No context");
 	IIO_ENSURE(iio_context_get_devices_count(ctx) > 0 && "No devices");
 
-	printf("* Acquiring AD9361 streaming devices\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring AD9361 streaming devices\n");
 	IIO_ENSURE(get_ad9361_stream_dev(TX, &tx) && "No tx dev found");
 	IIO_ENSURE(get_ad9361_stream_dev(RX, &rx) && "No rx dev found");
 
-	printf("* Configuring AD9361 for streaming\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Configuring AD9361 for streaming\n");
 	IIO_ENSURE(cfg_ad9361_streaming_ch(&rxcfg, RX, 0) && "RX port 0 not found");
 	IIO_ENSURE(cfg_ad9361_streaming_ch(&txcfg, TX, 0) && "TX port 0 not found");
 
-	printf("* Initializing AD9361 IIO streaming channels\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Initializing AD9361 IIO streaming channels\n");
 	IIO_ENSURE(get_ad9361_stream_ch(RX, rx, 0, &rx0_i) && "RX chan i not found");
 	IIO_ENSURE(get_ad9361_stream_ch(RX, rx, 1, &rx0_q) && "RX chan q not found");
 	IIO_ENSURE(get_ad9361_stream_ch(TX, tx, 0, &tx0_i) && "TX chan i not found");
 	IIO_ENSURE(get_ad9361_stream_ch(TX, tx, 1, &tx0_q) && "TX chan q not found");
 
-	printf("* Enabling IIO streaming channels\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Enabling IIO streaming channels\n");
 	// We are enabling all four of these channels, even though we are actually
 	// only using the lower half of the i channel in each case. This may not be
 	// strictly necessary, but it seems safer to stick with the full I/Q format
@@ -200,7 +201,7 @@ void iio_setup(void)
 	if (ret < 0) {
 		char buf_test[256];
 		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
-		printf("* set_kernel_buffers (tx) failed : %s\n", buf_test);
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "* set_kernel_buffers (tx) failed : %s\n", buf_test);
 		exit(1);
 	}
 
@@ -208,7 +209,7 @@ void iio_setup(void)
 	if (ret < 0) {
 		char buf_test[256];
 		iio_strerror(-(int)ret, buf_test, sizeof(buf_test));
-		printf("* set_kernel_buffers (rx) failed : %s\n", buf_test);
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "* set_kernel_buffers (rx) failed : %s\n", buf_test);
 		exit(1);
 	}
 
@@ -220,14 +221,14 @@ void iio_setup(void)
 	if (ret < 0) {
 		char timeout_test[256];
 		iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
-		printf("* set_timeout failed : %s\n", timeout_test);
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "* set_timeout failed : %s\n", timeout_test);
 		exit(1);
 	}
 
-	printf("* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
 	txbuf = iio_device_create_buffer(tx, software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!txbuf) {
-		perror("Could not create TX buffer");
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "Could not create TX buffer");
 		cleanup_and_exit(1);
 	}
 
@@ -236,7 +237,7 @@ void iio_setup(void)
 
 void iio_teardown(void)
 {
-	printf("* Destroying buffers\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Destroying buffers\n");
 	if (rxbuf) {
 		iio_buffer_cancel(rxbuf);
 		iio_buffer_destroy(rxbuf);
@@ -246,13 +247,13 @@ void iio_teardown(void)
 		iio_buffer_destroy(txbuf);
 	}
 
-	printf("* Disabling streaming channels\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Disabling streaming channels\n");
 	if (rx0_i) { iio_channel_disable(rx0_i); }
 	if (rx0_q) { iio_channel_disable(rx0_q); }
 	if (tx0_i) { iio_channel_disable(tx0_i); }
 	if (tx0_q) { iio_channel_disable(tx0_q); }
 
-	printf("* Destroying context\n");
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Destroying context\n");
 	if (ctx) { iio_context_destroy(ctx); }
 }
 
@@ -270,10 +271,10 @@ void print_rssi(void) {
 	if (ret < 0) {
 		char rssi_error[256];
 		iio_strerror(-(int)ret, rssi_error, sizeof(rssi_error));
-		printf("iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
-		printf("rssi: 9999.\n");	// for the output parser
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "iio_channel_attr_read(channel, rssi, rssi_buffer, size of rssi_buffer) failed : %s\n", rssi_error);
+		debug_printf(LEVEL_INFO, DEBUG_IIO, "rssi: 9999.\n");	// for the output parser
 	} else {
-		printf("rssi: %s.\n", rssi_buffer);
+		debug_printf(LEVEL_INFO, DEBUG_IIO, "rssi: %s.\n", rssi_buffer);
 	}
 }
 
@@ -286,16 +287,16 @@ void print_rssi(void) {
 // This is step 1.
 int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 	if (!txbuf) {
-		printf("OVP: Error - TX buffer not initialized\n");
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "OVP: Error - TX buffer not initialized\n");
 		exit(1);
 	}
 
 	if (!frame_data || frame_size != (software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE)) {
-		printf("OVP: Error - invalid frame data\n");
+		debug_printf(LEVEL_MEDIUM, DEBUG_FRAMES, "OVP: Error - invalid frame data\n");
 		exit(1);
 	}
 
-	printf("OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: Sending %zu bytes to MSK modulator\n", frame_size);
 
 	// Get buffer pointers and step size
 	char *p_dat, *p_end;
@@ -352,12 +353,12 @@ int push_txbuf_to_msk(void) {
 	uint32_t local_ts_base;
 
 	local_ts_base = get_timestamp_ms();
-	// printf("OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
+	// debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
 	ssize_t result = iio_buffer_push(txbuf);
-	printf("OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 
 	if (result < 0) {
-		printf("OVP: Error pushing buffer to MSK: %zd\n", result);
+		debug_printf(LEVEL_MEDIUM, DEBUG_IIO, "OVP: Error pushing buffer to MSK: %zd\n", result);
 		cleanup_and_exit(1);
 	}
 
@@ -365,8 +366,8 @@ int push_txbuf_to_msk(void) {
 	uint32_t new_xfer_count = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
 	uint32_t delta = new_xfer_count - old_xfer_count;
 
-	printf("OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
-	printf("OVP: Current axis_xfer_count: %u\n", new_xfer_count);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "OVP: Current axis_xfer_count: %u\n", new_xfer_count);
 	old_xfer_count = new_xfer_count;
 	return 0;
 }

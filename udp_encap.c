@@ -32,7 +32,9 @@ void register_encap_address(struct sockaddr_in *address) {
 void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
     ssize_t bytes_sent;
     
+    printf("MUTEX timeline_lock: locking in udp_encap at %d\n", get_timestamp_ms());
     pthread_mutex_lock(&timeline_lock);
+    printf("MUTEX timeline_lock: acquired in udp_encap at %d\n", get_timestamp_ms());
 
     bytes_sent = sendto(
             ovp_udp_socket,
@@ -49,5 +51,7 @@ void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
         cleanup_and_exit(1);
     }
 
+    printf("MUTEX RELEASE in udp_encap at %d\n", get_timestamp_ms());
     pthread_mutex_unlock(&timeline_lock);
+    printf("MUTEX RELEASED in udp_encap at %d\n", get_timestamp_ms());
 }

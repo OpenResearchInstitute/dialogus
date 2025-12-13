@@ -73,6 +73,9 @@ int init_register_access(void) {
 	write_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH, 0x5555AAAA);
 	printf("Reading from scratch register in RX-DMAC. We see: (0x%08x@%04x)\n", read_mapped_reg(rx_dmac_register_map, DMAC_SCRATCH), DMAC_SCRATCH);
 	printf("Reading the RX-DMAC peripheral ID: (0x%08x@%04x)\n", read_mapped_reg(tx_dmac_register_map, DMAC_PERIPHERAL_ID), DMAC_PERIPHERAL_ID);
+	printf("DMAC FLAGS tx_dmac_flags=%08x rx_dmac_flags%08x\n",
+			read_mapped_reg(tx_dmac_register_map, DMAC_FLAGS),
+			read_mapped_reg(rx_dmac_register_map, DMAC_FLAGS));
 
     return 0;
 }

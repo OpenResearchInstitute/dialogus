@@ -4,6 +4,7 @@ CFLAGS := -mfloat-abi=hard --sysroot=$(HOME)/pluto-0.38.sysroot -g -lpthread -li
 
 SOURCES := \
 	config.c \
+	debug_printf.c \
 	debug_utils.c \
 	debugthread.c \
 	dialogus.c \

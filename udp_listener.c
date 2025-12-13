@@ -55,7 +55,9 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 		if (!udp_listener_running) {
 			break;
 		}
+		printf("MUTEX timeline_lock: locking in listener at %d\n", get_timestamp_ms());
 		pthread_mutex_lock(&timeline_lock);
+		printf("MUTEX timeline_lock: acquired in listener at %d\n", get_timestamp_ms());
 
 		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
 			recv_ts = get_timestamp_ms();
@@ -80,7 +82,10 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 				perror("OVP: UDP receive error");	// don't exit on receive errors
 			}
 		}
+
+		printf("MUTEX RELEASE in listener at %d\n", get_timestamp_ms());
 		pthread_mutex_unlock(&timeline_lock);
+		printf("MUTEX RELEASED in listener at %d\n", get_timestamp_ms());
 	}
 
 	printf("OVP: UDP listener thread exiting\n");

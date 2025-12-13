@@ -7,6 +7,7 @@
 #include "frame_header.h"
 #include "receiver.h"
 #include "statistics.h"
+#include "timestamp.h"
 
 // OVP Statistics
 uint64_t ovp_frames_received = 0;
@@ -55,9 +56,13 @@ void print_ovp_statistics(void) {
 // Wakes up at intervals of about 10 seconds and print a report.
 void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg) {
 	while (!stop) {
+		printf("MUTEX timeline_lock: locking in statistics at %d\n", get_timestamp_ms());
 		pthread_mutex_lock(&timeline_lock);
+		printf("MUTEX timeline_lock: acquired in statistics at %d\n", get_timestamp_ms());
 		print_ovp_statistics();
+		printf("MUTEX RELEASE in statistics at %d\n", get_timestamp_ms());
 		pthread_mutex_unlock(&timeline_lock);
+		printf("MUTEX RELEASED in statistics at %d\n", get_timestamp_ms());
 		// don't sleep all at once; makes exiting the program too slow.
 		for (int i=0; i < 100; i++) {
 			usleep(100e3);	// 100 iterations of 100ms = 10 seconds
