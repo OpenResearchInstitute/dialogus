@@ -225,7 +225,7 @@ void iio_setup(void)
 		exit(1);
 	}
 
-	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Creating TX IIO buffer, size %d\n", OVP_MODULATOR_FRAME_SIZE);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Creating TX IIO buffer, size %d\n", software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE);
 	txbuf = iio_device_create_buffer(tx, software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!txbuf) {
 		debug_printf(LEVEL_URGENT, DEBUG_IIO, "Could not create TX buffer");
