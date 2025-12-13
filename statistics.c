@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "frame_header.h"
 #include "receiver.h"
 #include "statistics.h"
@@ -49,20 +50,20 @@ void print_ovp_statistics(void) {
 	printf("Total Frames Received:    %llu\n", (unsigned long long)ovp_refill_count);
 	printf("Wrong Length Frames:      %llu\n", (unsigned long long)ovp_refill_error_count); 
 	printf("Forwarded Frames:         %llu\n", (unsigned long long)ovp_forwarded_count);
-	printf("=================================\n");
+	printf("=================================\n\n");
 }
 
 // OVP Periodic Statistics Reporter thread
 // Wakes up at intervals of about 10 seconds and print a report.
 void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg) {
 	while (!stop) {
-		printf("MUTEX timeline_lock: locking in statistics at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in statistics\n");
 		pthread_mutex_lock(&timeline_lock);
-		printf("MUTEX timeline_lock: acquired in statistics at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: acquired in statistics\n");
 		print_ovp_statistics();
-		printf("MUTEX RELEASE in statistics at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in statistics\n");
 		pthread_mutex_unlock(&timeline_lock);
-		printf("MUTEX RELEASED in statistics at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in statistics\n");
 		// don't sleep all at once; makes exiting the program too slow.
 		for (int i=0; i < 100; i++) {
 			usleep(100e3);	// 100 iterations of 100ms = 10 seconds
@@ -71,7 +72,7 @@ void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg)
 			}
 		}
 	}
-	printf("OVP: Periodic reporter thread exiting\n");
+	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Periodic reporter thread exiting\n");
 	return NULL;
 }
 
@@ -81,7 +82,7 @@ int start_periodic_statistics_reporter(void) {
 		return -1;
 	}
 	
-	printf("OVP: Reporter started successfully\n");
+	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Reporter started successfully\n");
 	return 0;
 }
 
@@ -90,6 +91,6 @@ void stop_periodic_statistics_reporter(void) {
 		pthread_cancel(ovp_reporter_thread);
 	}
 		
-	printf("OVP: Reporter stopped\n");
+	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Reporter stopped\n");
 }
 

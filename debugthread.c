@@ -92,7 +92,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 				}
 
 			}
-			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread power %d ",
+			debug_printf(LEVEL_BORING, DEBUG_MSK, "debugthread power %d\n",
 					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
 
