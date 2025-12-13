@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "numerology.h"
 #include "registers.h"
 
@@ -74,7 +75,7 @@ void msk_setup(void)
 
 	bitrate = CHANNEL_BITRATE;
 	freq_if = IF_FREQUENCY;
-	tx_sample_rate = 61440000;
+	tx_sample_rate = 61440000 * config_tx_clock_multiplier;
 	tx_rx_sample_ratio = 25;								// Rx downsampling implemented in FPGA
 	rx_sample_rate = tx_sample_rate / tx_rx_sample_ratio;	// Rx effective sample rate (not used)
 

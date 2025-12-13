@@ -17,11 +17,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <termios.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "debugthread.h"
 #include "fec.h"
 #include "frame_header.h"
@@ -455,6 +457,8 @@ int main (void)
 {
 
 	printf("Hello from Dialogus version %s\n", DIALOGUS_VERSION);
+
+	configure_dialogus();
 
 	// Listen to ctrl+c and IIO_ENSURE
 	signal(SIGINT, handle_sig);
