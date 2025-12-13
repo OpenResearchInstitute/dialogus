@@ -64,7 +64,8 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 //													   (tx_fifo_reg & 0x007FE000) >> 13,
 //													   (tx_fifo_reg & 0x000003FF)
 //						);
-			printf("DEBUG TX: etv=%x etr=%x ftv=%x ftr=%x txr=%x etl=%x %s wr=%03x rd=%03x\n", 
+			if (tx_fifo_reg != 0xDEADBEEF) {
+				printf("DEBUG TX: etv=%x etr=%x ftv=%x ftr=%x txr=%x etl=%x %s wr=%03x rd=%03x\n", 
 						(tx_fifo_reg & 0x80000000) >> 31,
 						(tx_fifo_reg & 0x40000000) >> 30,
 						(tx_fifo_reg & 0x20000000) >> 29,
@@ -75,7 +76,9 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						(tx_fifo_reg & 0x007FE000) >> 13,
 						(tx_fifo_reg & 0x000003FF)
 						);
-			printf("DEBUG RX: vstart=%x vbusy=%x vdone=%x dectv=%x dectr=%x %s wr=%03x rd=%03x\n",
+				}
+			if (rx_fifo_reg != 0xDEADBEEF) {
+				printf("DEBUG RX: vstart=%x vbusy=%x vdone=%x dectv=%x dectr=%x %s wr=%03x rd=%03x\n",
 						(rx_fifo_reg & 0x10000000) >> 28,
 						(rx_fifo_reg & 0x08000000) >> 27,
 						(rx_fifo_reg & 0x04000000) >> 26,
@@ -85,9 +88,12 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						(rx_fifo_reg & 0x007FE000) >> 13,
 						(rx_fifo_reg & 0x000003FF)						
 						);
+				}
+
 			printf("debugthread power at %d %d ", now,
-							capture_and_read_msk(OFFSET_MSK(rx_power)));
+					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
+
 			sync_status = capture_and_read_msk(OFFSET_MSK(rx_frame_sync_status));
 			frame_sync_locked = sync_status & 0x00000001;
 			frame_buffer_overflow = sync_status & 0x00000002;
@@ -99,6 +105,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 				frame_sync_errors,
 				frame_sync_locked ? "LOCKED" : "unlocked",
 				frame_buffer_overflow ? "OVERFLOW" : "");
+				
 //			printf("debugthread axis at %d ms: axis_xfer_count = 0x%08x\n", now, 
 //					capture_and_read_msk(OFFSET_MSK(axis_xfer_count)));
 
