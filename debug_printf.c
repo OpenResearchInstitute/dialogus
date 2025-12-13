@@ -64,7 +64,7 @@ void debug_printf(debug_level level, debug_topics topic, const char *format, ...
 
 void debug_printf_summary(void) {
     if (filtered_out_count > 0) {
-        printf("%d messages were filtered out.", filtered_out_count);
+        printf("%d messages were filtered out.\n", filtered_out_count);
     } else {
         printf("No messages were filtered out.\n");
     }
