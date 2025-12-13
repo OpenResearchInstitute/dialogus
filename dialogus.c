@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "debug_printf.h"
 #include "debugthread.h"
 #include "fec.h"
 #include "frame_header.h"
@@ -131,6 +132,8 @@ void cleanup_and_exit(int retval)
 	print_ovp_statistics();	// make sure one last report goes out, even if it's a duplicate
 
 	iio_teardown();
+
+	debug_printf_summary();
 
 	printf("Goodbye from Dialogus version %s\n", DIALOGUS_VERSION);
 

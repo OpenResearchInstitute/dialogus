@@ -7,6 +7,7 @@
 #include "debug_printf.h"
 #include "timestamp.h"
 
+static int filtered_out_count = 0;
 
 static bool should_print(debug_level level, debug_topics topic) {
 
@@ -31,9 +32,18 @@ static bool should_print(debug_level level, debug_topics topic) {
 
         case DEBUG_MSK:
                 return level <= LEVEL_INFO;
+
+        case DEBUG_IIO:
+                return level <= LEVEL_INFO;
+
+        case DEBUG_SESSION:
+                return level <= LEVEL_INFO;
+
+        case DEBUG_FRAMES:
+                return level <= LEVEL_INFO;
         
         default:
-                printf("Unhandled topic %d in debug_printf -- ", topic);
+                printf("Unhandled topic %d in debug_printf.\n", topic);
                 return true;
     }
 }
@@ -47,5 +57,15 @@ void debug_printf(debug_level level, debug_topics topic, const char *format, ...
         va_start(args, format);
         vprintf(extended_format, args);
         va_end(args);
+    } else {
+        filtered_out_count++;
+    }
+}
+
+void debug_printf_summary(void) {
+    if (filtered_out_count > 0) {
+        printf("%d messages were filtered out.", filtered_out_count);
+    } else {
+        printf("No messages were filtered out.\n");
     }
 }

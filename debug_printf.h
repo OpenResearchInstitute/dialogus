@@ -26,3 +26,4 @@ typedef enum {
 
 
 extern void debug_printf(debug_level level, debug_topics topic, const char *format, ...);
+extern void debug_printf_summary(void);
