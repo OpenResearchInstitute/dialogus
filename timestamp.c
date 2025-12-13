@@ -41,18 +41,24 @@ uint64_t get_timestamp(void) {
 			printf("Global timer counts_per_second appears to be %.2f\n", counts_per_second);
 		}
 		pclose(f);
+		printf("Closed\n");
 	}
 
 	// Reading global timer counter register
 	/* This is the method used in the library code for XTime_GetTime().
 	   It handles the case where the first read of the two timer regs
 	   spans a carry between the two timer words. */
-	do {
-		high = read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET);
-		low = read_mapped_reg(timer_register_map, GLOBAL_TMR_LOWER_OFFSET);
-		// printf("%08x %08x\n", high, low);
-	} while (read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
-	return((((uint64_t) high) << 32U) | (uint64_t) low);
+	// But if it's early in initialization and we don't have the timer registers
+	// mapped yet, we just return 0.
+	if (timer_register_map == NULL) {
+		return(0);
+	} else {
+		do {
+			high = read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET);
+			low = read_mapped_reg(timer_register_map, GLOBAL_TMR_LOWER_OFFSET);
+		} while (read_mapped_reg(timer_register_map, GLOBAL_TMR_UPPER_OFFSET) != high);
+		return((((uint64_t) high) << 32U) | (uint64_t) low);
+	}
 }
 
 uint32_t get_timestamp_ms(void) {
