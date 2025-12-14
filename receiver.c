@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "fec.h"
 #include "interleaver.h"
 #include "numerology.h"
@@ -91,7 +92,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	// thread-safe.
 	rx_ctx = iio_context_clone(ctx);
 	if (!rx_ctx) {
-		printf("Failed to create receive context\n");
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "Failed to create receive context\n");
 		cleanup_and_exit(1);
 	}
 
@@ -105,9 +106,9 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	if (ret < 0) {
 			char timeout_test[256];
 			iio_strerror(-(int)ret, timeout_test, sizeof(timeout_test));
-			printf("* rx_ctx set_timeout failed : %s\n", timeout_test);
+			debug_printf(LEVEL_URGENT, DEBUG_IIO, "* rx_ctx set_timeout failed : %s\n", timeout_test);
 	} else {
-			printf("* rx_ctx set_timeout returned %d, which is a success.\n", ret);
+			debug_printf(LEVEL_BORING, DEBUG_IIO, "* rx_ctx set_timeout returned %d, which is a success.\n", ret);
 	}
 
 
@@ -122,7 +123,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 
 	rx_buf = iio_device_create_buffer(rx_dev, software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE, false);
 	if (!rx_buf) {
-		perror("Could not create RX buffer");
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "Could not create RX buffer");
 		cleanup_and_exit(1);
 	}
 
@@ -134,19 +135,19 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 		ovp_refill_count++;
 		if (nbytes_rx < 0) {
 				if (nbytes_rx == -ETIMEDOUT) {
-					printf("Refill timeout (no sync word yet?)\n");
+					debug_printf(LEVEL_INFO, DEBUG_RX, "Refill timeout (no sync word yet?)\n");
 					nbytes_rx = 0;
 				} else {
-					printf("Error refilling buf %d\n",(int) nbytes_rx);
+					debug_printf(LEVEL_URGENT, DEBUG_IIO, "Error refilling buf %d\n",(int) nbytes_rx);
 					ovp_refill_error_count++;
 					cleanup_and_exit(1);
 				}
 		} else {
-			printf("OVP: buffer_refill of %d bytes took %dms\n", nbytes_rx / 4, get_timestamp_ms() - refill_ts_base);
+			debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: buffer_refill of %d bytes took %dms\n", nbytes_rx / 4, get_timestamp_ms() - refill_ts_base);
 
 			// nbytes_rx includes the three wasted bytes for each byte transferred via AXI-S
 			if (nbytes_rx != (software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE) * 4) {
-				printf("Warning: unexpected rx frame size %d; discarded!\n", nbytes_rx);
+				debug_printf(LEVEL_MEDIUM, DEBUG_IIO, "Warning: unexpected rx frame size %d; discarded!\n", nbytes_rx);
 				ovp_refill_error_count++;
 				continue;
 			}
@@ -200,7 +201,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 	iio_buffer_destroy(rx_buf);
 	iio_context_destroy(rx_ctx);
 
-	printf("OVP: receiver thread exiting\n");
+	debug_printf(LEVEL_BORING, DEBUG_THREADS, "receiver thread exiting\n");
 	return NULL;
 }
 
@@ -223,11 +224,11 @@ int start_ovp_receiver(void) {
 	}
 		
 	if (pthread_create(&ovp_rx_thread, NULL, ovp_receiver_thread, NULL) != 0) {
-		perror("OVP: Failed to create receiver thread");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "OVP: Failed to create receiver thread");
 		return -1;
 	}
 	
-	printf("OVP: Receiver started successfully\n");
+	debug_printf(LEVEL_BORING, DEBUG_RX, "OVP: Receiver started successfully\n");
 	return 0;
 }
 
@@ -240,7 +241,7 @@ void stop_ovp_receiver(void) {
 		pthread_cancel(ovp_rx_thread);
 	}
 		
-	printf("OVP: receiver stopped\n");
+	debug_printf(LEVEL_BORING, DEBUG_RX, "OVP: receiver stopped\n");
 }
 
 void receiver_ok_to_forward_frames(bool ok) {

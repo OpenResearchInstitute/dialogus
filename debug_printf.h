@@ -12,9 +12,9 @@ typedef enum {
 } debug_level;
 
 typedef enum {
-    DEBUG_ALL,
-    DEBUG_NONE,
-    DEBUG_THREADS,
+    DEBUG_ALL = 0,
+    DEBUG_NONE = 255,
+    DEBUG_THREADS = 1,
     DEBUG_TIMELINE,
     DEBUG_FIFO,
     DEBUG_MUTEX,
@@ -22,6 +22,9 @@ typedef enum {
     DEBUG_IIO,
     DEBUG_SESSION,
     DEBUG_FRAMES,
+    DEBUG_ENCAP,
+    DEBUG_RX,
+    DEBUG_REGS,
 } debug_topics;
 
 

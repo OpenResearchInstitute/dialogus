@@ -72,17 +72,17 @@ void* ovp_periodic_statistics_reporter_thread(__attribute__((unused)) void *arg)
 			}
 		}
 	}
-	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Periodic reporter thread exiting\n");
+	debug_printf(LEVEL_BORING, DEBUG_THREADS, "Periodic reporter thread exiting\n");
 	return NULL;
 }
 
 int start_periodic_statistics_reporter(void) {
 	if (pthread_create(&ovp_reporter_thread, NULL, ovp_periodic_statistics_reporter_thread, NULL) != 0) {
-		perror("OVP: Failed to create periodic statistics reporter thread");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to create periodic statistics reporter thread");
 		return -1;
 	}
 	
-	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Reporter started successfully\n");
+	debug_printf(LEVEL_BORING, DEBUG_THREADS, "Reporter started successfully\n");
 	return 0;
 }
 
@@ -91,6 +91,6 @@ void stop_periodic_statistics_reporter(void) {
 		pthread_cancel(ovp_reporter_thread);
 	}
 		
-	debug_printf(LEVEL_INFO, DEBUG_MUTEX, "OVP: Reporter stopped\n");
+	debug_printf(LEVEL_BORING, DEBUG_THREADS, "Reporter stopped\n");
 }
 

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "numerology.h"
 #include "udp_socket.h"
 
@@ -24,14 +25,14 @@ int init_udp_socket(void) {
 	// create the socket
 	ovp_udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
 	if (ovp_udp_socket < 0) {
-		perror("OVP: Failed to create UDP socket");
+		debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Failed to create UDP socket");
 		return -1;
 	}
 
 	// Set socket options
 	int opt = 1;	// allow reuse of local addresses
 	if (setsockopt(ovp_udp_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-		perror("OVP: Failed to set socket option");
+		debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Failed to set socket option");
 		close(ovp_udp_socket);
 		return -1;
 	}
@@ -44,7 +45,7 @@ int init_udp_socket(void) {
 
 	// Bind socket
 	if (bind(ovp_udp_socket, (struct sockaddr*)&ovp_listen_addr, sizeof(ovp_listen_addr)) < 0) {
-		perror("OVP: Failed to bind UDP socket");
+		debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Failed to bind UDP socket");
 		close(ovp_udp_socket);
 		ovp_udp_socket = -1;
 		return -1;

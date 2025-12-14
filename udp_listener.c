@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "numerology.h"
 #include "receiver.h"
 #include "statistics.h"
@@ -55,9 +56,9 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 		if (!udp_listener_running) {
 			break;
 		}
-		printf("MUTEX timeline_lock: locking in listener at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in listener\n");
 		pthread_mutex_lock(&timeline_lock);
-		printf("MUTEX timeline_lock: acquired in listener at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: acquired in listener\n");
 
 		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
 			recv_ts = get_timestamp_ms();
@@ -74,21 +75,21 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 			// Process the frame
 			accept_decapsulated_frame(ovp_frame_buffer);
 		} else if (udp_bytes_received >= 0) {
-			printf("OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
+			debug_printf(LEVEL_LOW, DEBUG_ENCAP, "OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
 					udp_bytes_received, OVP_SINGLE_FRAME_SIZE);
 			ovp_frame_errors++;
 		} else if (udp_bytes_received < 0) {
 			if (errno != EAGAIN && errno != EWOULDBLOCK && udp_listener_running) {
-				perror("OVP: UDP receive error");	// don't exit on receive errors
+				debug_printf(LEVEL_INFO, DEBUG_ENCAP, "OVP: UDP receive error");	// don't exit on receive errors
 			}
 		}
 
-		printf("MUTEX RELEASE in listener at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in listener\n");
 		pthread_mutex_unlock(&timeline_lock);
-		printf("MUTEX RELEASED in listener at %d\n", get_timestamp_ms());
+		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in listener\n");
 	}
 
-	printf("OVP: UDP listener thread exiting\n");
+	debug_printf(LEVEL_BORING, DEBUG_ENCAP, "UDP listener thread exiting\n");
 	return NULL;
 }
 
@@ -101,14 +102,14 @@ int start_ovp_listener(void) {
 	udp_listener_running = true;
 
 	if (pthread_create(&ovp_udp_thread, NULL, ovp_udp_listener_thread, NULL) != 0) {
-		perror("OVP: Failed to create UDP thread");
+		debug_printf(LEVEL_URGENT, DEBUG_ENCAP, "Failed to create UDP thread");
 		close(ovp_udp_socket);
 		ovp_udp_socket = -1;
 		udp_listener_running = false;
 		return -1;
 	}
 
-	printf("OVP: Listener started successfully\n");
+	debug_printf(LEVEL_BORING, DEBUG_ENCAP, "Listener started successfully\n");
 	return 0;
 }
 
@@ -127,7 +128,7 @@ void stop_ovp_listener(void) {
 			pthread_cancel(ovp_udp_thread);
 		}
 
-		printf("OVP: UDP listener stopped\n");
+		debug_printf(LEVEL_BORING, DEBUG_ENCAP, "UDP listener stopped\n");
 	}
 }
 

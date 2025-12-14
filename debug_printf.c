@@ -41,6 +41,15 @@ static bool should_print(debug_level level, debug_topics topic) {
 
         case DEBUG_FRAMES:
                 return level <= LEVEL_INFO;
+
+        case DEBUG_ENCAP:
+                return level <= LEVEL_INFO;
+
+        case DEBUG_RX:
+                return level <= LEVEL_INFO;
+
+        case DEBUG_REGS:
+                return level <= LEVEL_INFO;
         
         default:
                 printf("Unhandled topic %d in debug_printf.\n", topic);

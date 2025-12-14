@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "numerology.h"
 #include "registers.h"
 #include "statistics.h"
@@ -70,34 +71,33 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 	while (!stop) {
 		while (ovp_transmission_active) {
 			// printf("timeline grabbing mutex\n");
-			printf("MUTEX timeline_lock: locking in timeline at %d\n", get_timestamp_ms());
+			debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in timeline\n");
 			pthread_mutex_lock(&timeline_lock);
-			printf("MUTEX timeline_lock: acquired in timeline at %d\n", get_timestamp_ms());
+			debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: acquired in timeline\n");
 
 			if (decision_time != 0) {
 				now = get_timestamp_us();
-				printf("now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
+				debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "now %lld Td %lld -> decision in %lld us\n", now, decision_time, decision_time - now);
 				if (now >= decision_time) {
-					printf("Decision time is now at %d\n", get_timestamp_ms());
 					if (frames_readied_for_push > 0) {
 						if (frames_readied_for_push > 1) {
 							ovp_untimely_frames += frames_readied_for_push - 1;
-							printf("timeline @ %lld: frame + %d untimely frames\n", get_timestamp_us() - session_T0, frames_readied_for_push - 1);
+							debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "timeline @ %lld: frame + %d untimely frames\n", get_timestamp_us() - session_T0, frames_readied_for_push - 1);
 						} else {
-							printf("timeline @ %lld: frame\n", get_timestamp_us() - session_T0);
+							debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "timeline @ %lld: frame\n", get_timestamp_us() - session_T0);
 						}
 						hang_time_dummy_count = 0;
 						hang_timer_active = false;
 					} else {
 						if (hang_time_dummy_count >= hang_timer_frames) {
 							create_postamble_logical_frame();
-							printf("timeline @ %lld: postamble\n", get_timestamp_us() - session_T0);
+							debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "timeline @ %lld: postamble\n", get_timestamp_us() - session_T0);
 							hang_time_dummy_count = 0;
 							hang_timer_active = false;
 							ovp_transmission_active = 0;
 						} else {
 							create_dummy_logical_frame();
-							printf("timeline @ %lld: dummy frame\n", get_timestamp_us() - session_T0);
+							debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "timeline @ %lld: dummy frame\n", get_timestamp_us() - session_T0);
 							ovp_dummy_frames_sent++;
 							hang_time_dummy_count++;
 							hang_timer_active = true;
@@ -106,22 +106,20 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 
 					// Now on a common path for all outgoing frames: real, dummy, or postamble
 					if (software_tx_processing) {
-						printf("Attempting software processing at %d\n", get_timestamp_ms());
+						debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Attempting software processing\n");
 						process_ovp_frame_in_software(logical_frame_buffer);
 						load_ovp_frame_into_txbuf(modulator_frame_buffer, OVP_MODULATOR_FRAME_SIZE);
 					} else {
-						printf("Letting the hardware handle processing at %d\n", get_timestamp_ms());
+						debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Letting the hardware handle processing\n");
 						load_ovp_frame_into_txbuf(logical_frame_buffer, OVP_SINGLE_FRAME_SIZE);
 					}
 					local_ts_base = get_timestamp_ms();
-					printf("Before push at %d\n", get_timestamp_ms());
 					ssize_t result = iio_buffer_push(txbuf);
-					printf("After push as %d\n", get_timestamp_ms());
-					printf("iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+					debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 					if (result < 0) {
-						printf("OVP: Error pushing buffer to MSK: %zd\n", result);
+						debug_printf(LEVEL_URGENT, DEBUG_TIMELINE, "Error pushing buffer to MSK: %zd\n", result);
 					}
-					printf("After push, at %d, axis_xfer_count = 0x%08x tx_bit_count = 0x%08x\n",
+					debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "After push, at %d, axis_xfer_count = 0x%08x tx_bit_count = 0x%08x\n",
 							get_timestamp_ms(),
 							capture_and_read_msk(OFFSET_MSK(axis_xfer_count)),
 							capture_and_read_msk(OFFSET_MSK(Tx_Bit_Count)));
@@ -136,33 +134,32 @@ void* ovp_timeline_manager_thread(__attribute__((unused)) void *arg) {
 				}
 			}
 
-			printf("MUTEX RELEASE in timeline at %d\n", get_timestamp_ms());
+			debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in timeline\n");
 			pthread_mutex_unlock(&timeline_lock);
-			printf("MUTEX RELEASED in timeline at %d\n", get_timestamp_ms());
-			// printf("timeline released mutex\n");
+			debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in timeline\n");
 
 			now = get_timestamp_us();
-			printf("Getting ready to wait for decision time at %d\n", get_timestamp_ms());
+			debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Getting ready to wait for decision time\n");
 			if (decision_time - now > 0) {
 				usleep(decision_time - now);	// wait until next decision time
 			}
 		}
 
-		printf("OVP: Timeline paused until next transmission\n");
+		debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "Timeline paused until next transmission\n");
 		pthread_cond_wait(&timeline_start, &tls_lock);
 	}
 
-	printf("OVP: Timeline manager thread exiting\n");
+	debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Timeline manager thread exiting\n");
 	return NULL;
 }
 
 int start_timeline_manager(void) {
 	if (pthread_create(&ovp_timeline_thread, NULL, ovp_timeline_manager_thread, NULL) != 0) {
-		perror("OVP: Failed to create timeline manager thread");
+		perror("Failed to create timeline manager thread");
 		return -1;
 	}
 
-	printf("OVP: Timeline manager started successfully\n");
+	debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Timeline manager started successfully\n");
 	return 0;
 }
 
@@ -171,6 +168,6 @@ void stop_timeline_manager(void) {
 		pthread_cancel(ovp_timeline_thread);
 	}
 
-	printf("OVP: Timeline manager stopped\n");
+	debug_printf(LEVEL_BORING, DEBUG_TIMELINE, "Timeline manager stopped\n");
 }
 

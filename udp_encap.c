@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "debug_printf.h"
 #include "numerology.h"
 #include "receiver.h"
 #include "timestamp.h"
@@ -32,9 +33,9 @@ void register_encap_address(struct sockaddr_in *address) {
 void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
     ssize_t bytes_sent;
     
-    printf("MUTEX timeline_lock: locking in udp_encap at %d\n", get_timestamp_ms());
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in udp_encap\n");
     pthread_mutex_lock(&timeline_lock);
-    printf("MUTEX timeline_lock: acquired in udp_encap at %d\n", get_timestamp_ms());
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: acquired in udp_encap\n");
 
     bytes_sent = sendto(
             ovp_udp_socket,
@@ -45,13 +46,13 @@ void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
             udp_client_len
         );
     if (bytes_sent < 0) {
-        printf("Error sending encapsulated frame = %d\n", errno);        
+        debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Error sending encapsulated frame = %d\n", errno);        
     } else if (bytes_sent != length) {
-        perror("Sent only part of an encapsulated frame");
+        debug_printf(LEVEL_URGENT, DEBUG_ENCAP, "Sent only part of an encapsulated frame");
         cleanup_and_exit(1);
     }
 
-    printf("MUTEX RELEASE in udp_encap at %d\n", get_timestamp_ms());
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in udp_encap\n");
     pthread_mutex_unlock(&timeline_lock);
-    printf("MUTEX RELEASED in udp_encap at %d\n", get_timestamp_ms());
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in udp_encap\n");
 }

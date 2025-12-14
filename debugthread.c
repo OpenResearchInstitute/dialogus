@@ -115,10 +115,10 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 		pthread_mutex_unlock(&timeline_lock);
 		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in debugthread\n");
 
-//		usleep(10000);	// 10ms nominal sample rate
-		usleep(1000);	//!!! try 1ms
+		usleep(10000);	// 10ms nominal sample rate
+//		usleep(100);		// 0.1ms stretch goal sample rate
 	}
-	debug_printf(LEVEL_LOW, DEBUG_THREADS, "debug thread exiting\n");
+	debug_printf(LEVEL_BORING, DEBUG_THREADS, "debug thread exiting\n");
 	return NULL;
 }
 

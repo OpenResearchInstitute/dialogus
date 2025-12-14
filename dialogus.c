@@ -157,7 +157,7 @@ static void handle_sig(int sig)
 // Enable PTT and start MSK transmission
 int enable_msk_transmission(void) {
 
-	printf("OVP: Enabling transmit chain\n");
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "Enabling transmit chain\n");
 	WRITE_MSK(MSK_Init, 0x00000000);  // Deassert txinit    
 	usleep(100);  // might not be needed?
 
@@ -167,7 +167,7 @@ int enable_msk_transmission(void) {
 	usleep(1000);
 
 	uint32_t status = READ_MSK(MSK_Status);
-	printf("OVP: MSK_Status after PTT enable: 0x%08x\n", status);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "MSK_Status after PTT enable: 0x%08x\n", status);
 
 	return 0;
 }
@@ -175,13 +175,13 @@ int enable_msk_transmission(void) {
 
 // Disable PTT and stop MSK transmission
 int disable_msk_transmission(void) {
-	printf("timeline @ %lld: Disabling MSK transmission (PTT OFF)\n", get_timestamp_us() - session_T0);
+	debug_printf(LEVEL_INFO, DEBUG_SESSION, "timeline @ %lld: Disabling MSK transmission (PTT OFF)\n", get_timestamp_us() - session_T0);
 	WRITE_MSK(MSK_Control, 0x00000000);	// PTT off
 
 	uint32_t status = READ_MSK(MSK_Status);
-	printf("OVP: MSK_Status after PTT disable: 0x%08x\n", status);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "MSK_Status after PTT disable: 0x%08x\n", status);
 
-	printf("OVP: Disabling transmit chain\n");
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "Disabling transmit chain\n");
 	WRITE_MSK(MSK_Init, 0x00000002);  // Assert txinit (bit 1)    
 
 	return 0;
@@ -199,11 +199,11 @@ int disable_msk_transmission(void) {
 // Processing triggered by the arrival of a first frame after an idle period.
 void start_transmission_session(void) {
 	if (ovp_transmission_active) {	// should never happen
-		perror("Transmission session started while already active");
+		debug_printf(LEVEL_URGENT, DEBUG_SESSION, "Transmission session started while already active");
 		exit(1);
 	}
 
-	printf("OVP: Starting transmission session for station %s\n", active_station_id_ascii);
+	debug_printf(LEVEL_INFO, DEBUG_SESSION, "Starting transmission session for station %s\n", active_station_id_ascii);
 	session_ts_base = get_timestamp_ms();	// for debug prints
 
 	session_T0 = get_timestamp_us();	// used for timeline management
@@ -230,7 +230,7 @@ void start_transmission_session(void) {
 		}
 
 		// Send preamble to MSK modulator (pure bit pattern, no header, no processing)
-		printf("OVP: Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
+		debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "Sending 40ms preamble (1100 pattern, %zu bytes)\n", sizeof(preamble_frame));
 		load_ovp_frame_into_txbuf(preamble_frame, sizeof(preamble_frame));
 		enable_msk_transmission();
 		push_txbuf_to_msk();	// special handling for preamble "frame" - bypasses processing
@@ -253,7 +253,7 @@ void start_transmission_session(void) {
 // That is, the normal way a transmission ends.
 void end_transmission_session_normally(void) {
 
-	printf("OVP: Ending transmission session for station %s\n", active_station_id_ascii);
+	debug_printf(LEVEL_INFO, DEBUG_SESSION, "Ending transmission session for station %s\n", active_station_id_ascii);
 
 	// There's no definite way to synchronize with the end of the postamble
 	// going out the antenna. We'll have to settle for a fixed wait time,
@@ -267,7 +267,7 @@ void end_transmission_session_normally(void) {
 	dummy_frames_sent = 0;
 	tx_timeline_set_decision_time(0);	// decision time no longer valid until next transmission starts
 
-	printf("OVP: Session ended after %dms, ready for next transmission\n", get_timestamp_ms()-session_ts_base);
+	debug_printf(LEVEL_INFO, DEBUG_SESSION, "Session ended after %dms, ready for next transmission\n", get_timestamp_ms()-session_ts_base);
 }
 
 
@@ -276,7 +276,7 @@ void end_transmission_session_normally(void) {
 void abort_transmission_session(void) {
 
 	if (ovp_transmission_active) {
-		printf("OVP: Aborting transmission session\n");
+		debug_printf(LEVEL_MEDIUM, DEBUG_SESSION, "Aborting transmission session\n");
 	}
 
 	disable_msk_transmission();
@@ -290,7 +290,7 @@ void abort_transmission_session(void) {
 	tx_timeline_set_decision_time(0);	// decision time no longer valid until next transmission starts
 
 	if (ovp_transmission_active) {
-		printf("OVP: Session aborted after %dms\n", get_timestamp_ms()-session_ts_base);
+		debug_printf(LEVEL_MEDIUM, DEBUG_SESSION, "Session aborted after %dms\n", get_timestamp_ms()-session_ts_base);
 		ovp_transmission_active = 0;
 	}
 }
@@ -368,10 +368,10 @@ void create_postamble_logical_frame(void) {
 int init_ovp_udp_listener(void) {
 
 	if (init_udp_socket()) {
-		printf("Error initializing UDP socket\n");
+		debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Error initializing UDP socket\n");
 		return -1;
 	} else {
-		printf("OVP: UDP listener initialized on port %d\n", OVP_UDP_PORT);
+		debug_printf(LEVEL_INFO, DEBUG_ENCAP, "UDP listener initialized on port %d\n", OVP_UDP_PORT);
 	}
 
 	return 0;
@@ -384,7 +384,7 @@ int validate_ovp_frame(uint8_t *frame_data) {
 	// Check magic bytes (0xBBAADD) (!!! dummy for authentication token check)
 	uint32_t magic = (frame_data[6] << 16) | (frame_data[7] << 8) | frame_data[8];
 	if (magic != OVP_MAGIC_BYTES) {
-		printf("OVP: Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
+		debug_printf(LEVEL_MEDIUM, DEBUG_ENCAP, "Invalid magic bytes 0x%06x (expected 0x%06x)\n", magic, OVP_MAGIC_BYTES);
 		return -1;
 	}
 
@@ -432,7 +432,7 @@ void accept_decapsulated_frame(uint8_t *frame_data) {
 
 	// Real frame received - cancel hang timer if running
 	if (hang_timer_active) {
-		printf("OVP: canceling hang timer\n");
+		debug_printf(LEVEL_INFO, DEBUG_TIMELINE, "Canceling hang timer\n");
 		hang_timer_active = false;
 		dummy_frames_sent = 0;
 	}
@@ -445,7 +445,7 @@ void accept_decapsulated_frame(uint8_t *frame_data) {
 		start_transmission_session();
 	}
 
-	printf("OVP: Accepted real frame from %s\n", active_station_id_ascii);
+	debug_printf(LEVEL_INFO, DEBUG_ENCAP, "Accepted real frame from %s\n", active_station_id_ascii);
 
 	tx_timeline_frame_ready();	// notify the timeline to detect underruns/overwrites.
 
@@ -471,7 +471,7 @@ int main (void)
 
 	// Memory-map several ranges of registers for direct access
 	if (init_register_access() != 0) {
-		perror("Register access setup failed");
+		debug_printf(LEVEL_URGENT, DEBUG_REGS, "Register access setup failed");
 		cleanup_and_exit(1);
 	}
 
@@ -479,35 +479,35 @@ int main (void)
 	msk_setup();
 
 	if (start_debug_thread() < 0) {
-		perror("Failed to start debug thread\n");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to start debug thread\n");
 		cleanup_and_exit(1);
 	}
 
 	// Start OVP Timeline Manager
 	if (start_timeline_manager() < 0) {
-		perror("Failed to start OVP timeline manager\n");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to start OVP timeline manager\n");
 		cleanup_and_exit(1);
 	}
 
 	// Start periodic statistics reporter
 	if (start_periodic_statistics_reporter() < 0) {
-		perror("Failed to start periodic statistics reporter\n");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to start periodic statistics reporter\n");
 		cleanup_and_exit(1);
 	}
 
 	// Start OVP UDP listener
 	if (start_ovp_listener() < 0) {
-		perror("Failed to start OVP listener\n");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to start OVP listener\n");
 		cleanup_and_exit(1);
 	}
 
 	// Start OVP Receiver
 	if (start_ovp_receiver() < 0) {
-		perror("Failed to start OVP receiver\n");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to start OVP receiver\n");
 		cleanup_and_exit(1);
 	}
 
-	printf("OVP listener started on port %d\n", OVP_UDP_PORT);
+	debug_printf(LEVEL_BORING, DEBUG_ENCAP, "OVP listener started on port %d\n", OVP_UDP_PORT);
 	printf("Ready to receive frames from Interlocutor\n");
 	printf("Press Ctrl+C to stop\n");
 
