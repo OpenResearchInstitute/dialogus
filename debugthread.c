@@ -125,11 +125,11 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 int start_debug_thread(void) {
 
 	if (pthread_create(&ovp_debug_thread, NULL, ovp_debug_thread_func, NULL) != 0) {
-		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "OVP: Failed to create debug thread");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to create debug thread");
 		return -1;
 	}
 	
-	debug_printf(LEVEL_INFO, DEBUG_THREADS, "OVP: debug thread started successfully\n");
+	debug_printf(LEVEL_INFO, DEBUG_THREADS, "debug thread started successfully\n");
 	return 0;
 }
 
@@ -138,6 +138,6 @@ void stop_debug_thread(void) {
 		pthread_cancel(ovp_debug_thread);
 	}
 		
-	debug_printf(LEVEL_INFO, DEBUG_THREADS, "OVP: debug thread stopped\n");
+	debug_printf(LEVEL_INFO, DEBUG_THREADS, "debug thread stopped\n");
 }
 

@@ -62,7 +62,7 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 
 		if (udp_bytes_received == OVP_SINGLE_FRAME_SIZE) {
 			recv_ts = get_timestamp_ms();
-			printf("OVP: Received %zd encapsulated bytes from %s:%d after %dms ending with ", udp_bytes_received,
+			printf("Received %zd encapsulated bytes from %s:%d after %dms ending with ", udp_bytes_received,
 					inet_ntoa(udp_client_addr.sin_addr),
 					ntohs(udp_client_addr.sin_port),
 					recv_ts - last_recv_ts);
@@ -75,12 +75,12 @@ void* ovp_udp_listener_thread(__attribute__((unused)) void *arg) {
 			// Process the frame
 			accept_decapsulated_frame(ovp_frame_buffer);
 		} else if (udp_bytes_received >= 0) {
-			debug_printf(LEVEL_LOW, DEBUG_ENCAP, "OVP: Warning - received unexpected frame size %zd bytes (expected %d)\n", 
+			debug_printf(LEVEL_LOW, DEBUG_ENCAP, "Warning - received unexpected frame size %zd bytes (expected %d)\n", 
 					udp_bytes_received, OVP_SINGLE_FRAME_SIZE);
 			ovp_frame_errors++;
 		} else if (udp_bytes_received < 0) {
 			if (errno != EAGAIN && errno != EWOULDBLOCK && udp_listener_running) {
-				debug_printf(LEVEL_INFO, DEBUG_ENCAP, "OVP: UDP receive error");	// don't exit on receive errors
+				debug_printf(LEVEL_INFO, DEBUG_ENCAP, "UDP receive error");	// don't exit on receive errors
 			}
 		}
 

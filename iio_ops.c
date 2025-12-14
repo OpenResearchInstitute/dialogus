@@ -287,16 +287,16 @@ void print_rssi(void) {
 // This is step 1.
 int load_ovp_frame_into_txbuf(uint8_t *frame_data, size_t frame_size) {
 	if (!txbuf) {
-		debug_printf(LEVEL_URGENT, DEBUG_IIO, "OVP: Error - TX buffer not initialized\n");
+		debug_printf(LEVEL_URGENT, DEBUG_IIO, "Error - TX buffer not initialized\n");
 		exit(1);
 	}
 
 	if (!frame_data || frame_size != (software_tx_processing ? OVP_MODULATOR_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE)) {
-		debug_printf(LEVEL_MEDIUM, DEBUG_FRAMES, "OVP: Error - invalid frame data\n");
+		debug_printf(LEVEL_MEDIUM, DEBUG_FRAMES, "Error - invalid frame data\n");
 		exit(1);
 	}
 
-	debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: Sending %zu bytes to MSK modulator\n", frame_size);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "Sending %zu bytes to MSK modulator\n", frame_size);
 
 	// Get buffer pointers and step size
 	char *p_dat, *p_end;
@@ -353,12 +353,12 @@ int push_txbuf_to_msk(void) {
 	uint32_t local_ts_base;
 
 	local_ts_base = get_timestamp_ms();
-	// debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
+	// debug_printf(LEVEL_INFO, DEBUG_IIO, "time between iio_buffer_push starts was %dms\n", local_ts_base - push_ts_base);
 	ssize_t result = iio_buffer_push(txbuf);
-	debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
+	debug_printf(LEVEL_INFO, DEBUG_IIO, "iio_buffer_push took %dms.\n", get_timestamp_ms()-local_ts_base);
 
 	if (result < 0) {
-		debug_printf(LEVEL_MEDIUM, DEBUG_IIO, "OVP: Error pushing buffer to MSK: %zd\n", result);
+		debug_printf(LEVEL_MEDIUM, DEBUG_IIO, "Error pushing buffer to MSK: %zd\n", result);
 		cleanup_and_exit(1);
 	}
 
@@ -366,8 +366,8 @@ int push_txbuf_to_msk(void) {
 	uint32_t new_xfer_count = capture_and_read_msk(OFFSET_MSK(axis_xfer_count));
 	uint32_t delta = new_xfer_count - old_xfer_count;
 
-	debug_printf(LEVEL_INFO, DEBUG_MSK, "OVP: Buffer pushed, axis_xfer_count delta: %u\n", delta);
-	debug_printf(LEVEL_INFO, DEBUG_MSK, "OVP: Current axis_xfer_count: %u\n", new_xfer_count);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "Buffer pushed, axis_xfer_count delta: %u\n", delta);
+	debug_printf(LEVEL_INFO, DEBUG_MSK, "Current axis_xfer_count: %u\n", new_xfer_count);
 	old_xfer_count = new_xfer_count;
 	return 0;
 }

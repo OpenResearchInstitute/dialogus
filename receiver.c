@@ -143,7 +143,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 					cleanup_and_exit(1);
 				}
 		} else {
-			debug_printf(LEVEL_INFO, DEBUG_IIO, "OVP: buffer_refill of %d bytes took %dms\n", nbytes_rx / 4, get_timestamp_ms() - refill_ts_base);
+			debug_printf(LEVEL_INFO, DEBUG_IIO, "buffer_refill of %d bytes took %dms\n", nbytes_rx / 4, get_timestamp_ms() - refill_ts_base);
 
 			// nbytes_rx includes the three wasted bytes for each byte transferred via AXI-S
 			if (nbytes_rx != (software_rx_processing ? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE) * 4) {
@@ -224,11 +224,11 @@ int start_ovp_receiver(void) {
 	}
 		
 	if (pthread_create(&ovp_rx_thread, NULL, ovp_receiver_thread, NULL) != 0) {
-		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "OVP: Failed to create receiver thread");
+		debug_printf(LEVEL_URGENT, DEBUG_THREADS, "Failed to create receiver thread");
 		return -1;
 	}
 	
-	debug_printf(LEVEL_BORING, DEBUG_RX, "OVP: Receiver started successfully\n");
+	debug_printf(LEVEL_BORING, DEBUG_RX, "Receiver started successfully\n");
 	return 0;
 }
 
@@ -241,7 +241,7 @@ void stop_ovp_receiver(void) {
 		pthread_cancel(ovp_rx_thread);
 	}
 		
-	debug_printf(LEVEL_BORING, DEBUG_RX, "OVP: receiver stopped\n");
+	debug_printf(LEVEL_BORING, DEBUG_RX, "receiver stopped\n");
 }
 
 void receiver_ok_to_forward_frames(bool ok) {
