@@ -27,7 +27,8 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 	uint32_t frames_received __attribute__((unused)) = 0;
 	uint32_t frame_sync_errors __attribute__((unused)) = 0;
 	char *tx_state_names[8] = { "IDLE", "COLLECT", "RANDOMIZE", "PREP_FEC", "FEC_ENCODE", "INTERLEAVE", "OUTPUT", "iNvALiD" };
-	char *rx_state_names[8] = { "IDLE", "COLLECT", "EXTRACT", "DEINTERLEAVE", "PREP_FEC_DECODE", "FEC_DECODE", "DERANDOMIZE", "OUTPUT" };
+	char *rx_state_names[16] = { "IDLE", "COLLECT_BYTES", "COLLECT_SOFT", "EXTRACT", "DEDECORRELATE", "DEINTERLEAVE", "PREP_FEC_DECODE", "FEC_DECODE",
+								"DERANDOMIZE", "OUTPUT", "INVALID-A", "INVALID-B", "INVALID-C", "INVALID-D", "INVALID-E", "INVALID-F" };
 
 
 	while (!stop) {
@@ -80,12 +81,12 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 				}
 			if (rx_fifo_reg != 0xDEADBEEF) {
 					debug_printf(LEVEL_INFO, DEBUG_MSK, "DEBUG RX: vstart=%x v.busy=%x v.done=%x dec.tv=%x dec.tr=%x %s wr=%03x rd=%03x\n",
-						(rx_fifo_reg & 0x10000000) >> 28,
 						(rx_fifo_reg & 0x08000000) >> 27,
 						(rx_fifo_reg & 0x04000000) >> 26,
 						(rx_fifo_reg & 0x02000000) >> 25,
 						(rx_fifo_reg & 0x01000000) >> 24,
-						rx_state_names[(rx_fifo_reg & 0xe0000000) >> 29],
+						(rx_fifo_reg & 0x00800000) >> 23,
+						rx_state_names[(rx_fifo_reg & 0xf0000000) >> 28],
 						(rx_fifo_reg & 0x007FE000) >> 13,
 						(rx_fifo_reg & 0x000003FF)						
 						);
