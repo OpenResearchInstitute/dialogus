@@ -97,6 +97,12 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
 
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "f1_nco_adj: 0x%08x f2_nco_adj: 0x%08x\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "f1_error: 0x%08x f2_error: 0x%08x\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
+
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "Accums: %d %d  Gains: 0x%08x 0x%08x\n", capture_and_read_msk(OFFSET_MSK(LPF_Accum_F1)), capture_and_read_msk(OFFSET_MSK(LPF_Accum_F2)), 
+												READ_MSK(LPF_Config_2), READ_MSK(LPF_Config_1));
+
 			sync_status = capture_and_read_msk(OFFSET_MSK(rx_frame_sync_status));
 			frame_sync_locked = sync_status & 0x00000001;
 			frame_buffer_overflow = sync_status & 0x00000002;
