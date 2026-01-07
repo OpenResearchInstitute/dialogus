@@ -23,7 +23,7 @@ extern bool software_rx_processing;
 extern void cleanup_and_exit(int retval);
 extern int init_udp_socket(void);
 extern struct sockaddr_in udp_client_addr;
-extern struct iio_channel *rx0_i;
+//!!!extern struct iio_channel *rx0_i;
 extern struct iio_context *ctx;
 extern bool stop;
 
@@ -156,7 +156,7 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 			ptrdiff_t p_inc = iio_buffer_step(rx_buf);
 			char *p_end = iio_buffer_end(rx_buf);
 			uint8_t *p_out = received_frame;
-			char *first = (char *)iio_buffer_first(rx_buf, rx0_i);
+			char *first = (char *)iio_buffer_first(rx_buf, rx_ch_i);
 			for (char *p_dat = first; p_dat < p_end; p_dat += p_inc) {
 				*p_out++ = ((int16_t*)p_dat)[0] & 0x00ff;
 			}
