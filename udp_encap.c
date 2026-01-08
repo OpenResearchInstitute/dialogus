@@ -14,8 +14,9 @@
 #include "udp_socket.h"
 
 extern socklen_t udp_client_len;
-extern pthread_mutex_t timeline_lock;	// shared by all threads
 extern void cleanup_and_exit(int retval);
+
+pthread_mutex_t rx_encap_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Address for sending encap frames back over the network
 struct sockaddr_in udp_encap_destination;
@@ -33,9 +34,9 @@ void register_encap_address(struct sockaddr_in *address) {
 void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
     ssize_t bytes_sent;
     
-    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in udp_encap\n");
-    pthread_mutex_lock(&timeline_lock);
-    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: acquired in udp_encap\n");
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX rx_encap_lock: locking in udp_encap\n");
+    pthread_mutex_lock(&rx_encap_lock);
+    debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX rx_encap_lock: acquired in udp_encap\n");
 
     bytes_sent = sendto(
             ovp_udp_socket,
@@ -53,6 +54,6 @@ void forward_encap_frame(uint8_t *frame_buffer, ssize_t length) {
     }
 
     debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in udp_encap\n");
-    pthread_mutex_unlock(&timeline_lock);
+    pthread_mutex_unlock(&rx_encap_lock);
     debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASED in udp_encap\n");
 }
