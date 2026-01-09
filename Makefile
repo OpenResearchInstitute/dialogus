@@ -1,3 +1,10 @@
+#As it is part of a buildroot project
+#https://buildroot.org/downloads/manual/using-buildroot-toolchain.txt
+#Prepare buildroot : make prepare-sdk or use BR2_PACKAGE_HOST_ENVIRONMENT_SETUP in your install (included on msk firmware
+
+#source $pathtoyourbuildrootoutput/host/environment-setup
+
+
 # --- Project Configuration ---
 TARGET_BASE := dialogus
 BIN_DIR     := bin
@@ -8,7 +15,6 @@ REG_H       := msk_top_regs.h
 REG_URL     := https://raw.githubusercontent.com/OpenResearchInstitute/pluto_msk/refs/heads/main/rdl/outputs/c-header/msk_top_regs.h
 
 # Compiler and Linker settings
-CC       := gcc
 CFLAGS   := -g -Wall -Wextra -O2
 LDFLAGS  := -lpthread -liio -lm
 CPPFLAGS := -MMD -MP
