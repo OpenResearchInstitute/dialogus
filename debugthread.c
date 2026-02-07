@@ -79,6 +79,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						(tx_fifo_reg & 0x000003FF)
 						);
 				}
+			}
 			if (rx_fifo_reg != 0xDEADBEEF) {
 					debug_printf(LEVEL_INFO, DEBUG_MSK, "DEBUG RX: vstart=%x v.busy=%x v.done=%x dec.tv=%x dec.tr=%x %s wr=%03x rd=%03x\n",
 						(rx_fifo_reg & 0x08000000) >> 27,
@@ -92,7 +93,6 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						);
 				}
 
-			}
 			debug_printf(LEVEL_BORING, DEBUG_MSK, "debugthread power %d\n",
 					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
