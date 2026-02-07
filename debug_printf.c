@@ -25,7 +25,7 @@ static bool should_print(debug_level level, debug_topics topic) {
                 return level <= LEVEL_INFO;
 
         case DEBUG_FIFO:
-                return level <= LEVEL_LOW;
+                return level <= LEVEL_INFO;     //!!! _LOW;
 
         case DEBUG_MUTEX:
                 return level <= LEVEL_LOW;
