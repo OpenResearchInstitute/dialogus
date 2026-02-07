@@ -82,6 +82,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						(tx_fifo_reg & 0x000003FF)
 						);
 				}
+			}
 			if (rx_fifo_reg != 0xDEADBEEF) {
 					debug_printf(LEVEL_INFO, DEBUG_MSK, "DEBUG RX: vstart=%x v.busy=%x v.done=%x dec.tv=%x dec.tr=%x %s wr=%03x rd=%03x\n",
 						(rx_fifo_reg & 0x08000000) >> 27,
@@ -95,8 +96,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						);
 				}
 
-			}
-			debug_printf(LEVEL_BORING, DEBUG_MSK, "debugthread power %d\n",
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread power %d\n",
 					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
 
@@ -123,7 +123,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 
 			// CAUTION: reading symbol_lock_status clears the unlock bits.
 			// This debug feature is not compatible with actually using the unlock bits.
-			lock_status_reg = READ_MSK(symbol_lock_status) & 0x07;
+			lock_status_reg = READ_MSK(symbol_lock_status);
 			lock_status = lock_status_reg & 0x07;
 			if (lock_status == 0) lock_msg = "unlocked";
 			else if (lock_status == 7) lock_msg = "LOCKED";
@@ -139,6 +139,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 
 			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread symbol lock: %s %s\n", lock_msg, unlock_msg);
 			if (lock_status == 7 && never_locked) {
+				never_locked = false;
 				lock_times = capture_and_read_msk(OFFSET_MSK(symbol_lock_time));
 				debug_printf(LEVEL_MEDIUM, DEBUG_MSK, "Symbol lock first obtained after %d/%d symbols\n",
 					lock_times & 0x0000ffff, (lock_times >> 16) & 0x0000ffff);
