@@ -46,7 +46,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 				debug_printf(LEVEL_INFO, DEBUG_FIFO, "debugthread fifo -- can't read RX FIFO right now\n");
 			}
 			if (tx_fifo_reg == 0xDEADBEEF) {
-				debug_printf(LEVEL_INFO, DEBUG_FIFO, "debugthread fifo -- can't read TX FIFO right now\n");
+				debug_printf(LEVEL_BORING, DEBUG_FIFO, "debugthread fifo -- can't read TX FIFO right now\n");
 			} else {
 //				debug_printf(LEVEL_INFO, DEBUG_FIFO, "debugthread fifo: tx-w:%03x tx-r:%03x rx-w:%03x rx-r:%03x tx-debug:%02x\n",
 //								(tx_fifo_reg & 0x03FF0000) >> 16,
