@@ -29,7 +29,10 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 	char *tx_state_names[8] = { "IDLE", "COLLECT", "RANDOMIZE", "PREP_FEC", "FEC_ENCODE", "INTERLEAVE", "OUTPUT", "INVALID-7" };
 	char *rx_state_names[16] = { "IDLE", "COLLECT_BYTES", "COLLECT_SOFT", "EXTRACT", "DEINTERLEAVE", "PREP_FEC_DECODE", "FEC_DECODE", "DERANDOMIZE",
 								"OUTPUT", "INVALID-9", "INVALID-A", "INVALID-B", "INVALID-C", "INVALID-D", "INVALID-E", "INVALID-F" };
-
+	uint32_t lock_status_reg, lock_status, unlock_status;
+	char *lock_msg, *unlock_msg;
+	static bool never_locked = true;
+	uint32_t lock_times;
 
 	while (!stop) {
 		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX timeline_lock: locking in debugthread\n");
@@ -93,7 +96,7 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 						);
 				}
 
-			debug_printf(LEVEL_BORING, DEBUG_MSK, "debugthread power %d\n",
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread power %d\n",
 					capture_and_read_msk(OFFSET_MSK(rx_power)));
 			print_rssi();
 
@@ -117,6 +120,30 @@ void* ovp_debug_thread_func(__attribute__((unused)) void *arg) {
 				
 //			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread axis: axis_xfer_count = 0x%08x\n",
 //					capture_and_read_msk(OFFSET_MSK(axis_xfer_count)));
+
+			// CAUTION: reading symbol_lock_status clears the unlock bits.
+			// This debug feature is not compatible with actually using the unlock bits.
+			lock_status_reg = READ_MSK(symbol_lock_status);
+			lock_status = lock_status_reg & 0x07;
+			if (lock_status == 0) lock_msg = "unlocked";
+			else if (lock_status == 7) lock_msg = "LOCKED";
+			else if (lock_status == 2) lock_msg = "F1 only";
+			else if (lock_status == 4) lock_msg = "F2 only";
+			else lock_msg = "INVALID";
+			
+			unlock_status = lock_status_reg & 0x18;
+			if (unlock_status == 0x18) unlock_msg = "lock lost";
+			else if (unlock_status == 0x08) unlock_msg = "F1 lock lost";
+			else if (unlock_status == 0x10) unlock_msg = "F2 lock lost";
+			else unlock_msg = "no new losses of lock";
+
+			debug_printf(LEVEL_INFO, DEBUG_MSK, "debugthread symbol lock: %s %s\n", lock_msg, unlock_msg);
+			if (lock_status == 7 && never_locked) {
+				never_locked = false;
+				lock_times = capture_and_read_msk(OFFSET_MSK(symbol_lock_time));
+				debug_printf(LEVEL_MEDIUM, DEBUG_MSK, "Symbol lock first obtained after %d/%d symbols\n",
+					lock_times & 0x0000ffff, (lock_times >> 16) & 0x0000ffff);
+			}
 
 		debug_printf(LEVEL_INFO, DEBUG_MUTEX, "MUTEX RELEASE in debugthread\n");
 		pthread_mutex_unlock(&timeline_lock);
