@@ -189,6 +189,10 @@ void msk_setup(void)
 	printf("f1_nco_adjust: (0x%08x) f2_nco_adjust: (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_nco_adjust)), capture_and_read_msk(OFFSET_MSK(f2_nco_adjust)));
 	printf("f1_error:      (0x%08x) f2_error:      (0x%08x)\n", capture_and_read_msk(OFFSET_MSK(f1_error)), capture_and_read_msk(OFFSET_MSK(f2_error)));
 
+	//initialize lowpass filter alpha values for digital power detector
+	WRITE_MSK(lowpass_ema_alpha1, 64);
+	WRITE_MSK(lowpass_ema_alpha2, 64);
+
 	printf("FIFOs during INIT: tx fifo: %08x rx fifo: %08x\n",
 						capture_and_read_msk(OFFSET_MSK(tx_async_fifo_rd_wr_ptr)),
 						capture_and_read_msk(OFFSET_MSK(rx_async_fifo_rd_wr_ptr)));
