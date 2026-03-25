@@ -7,7 +7,8 @@
 
 /* Operating frequencies */
 #define CHANNEL_BITRATE (54200)		// OPV bit rate
-#define CHANNEL_CENTER MHZ(905.05)	// a legit channel in USA band plan
+//#define CHANNEL_CENTER MHZ(905.05)	// a legit channel in USA band plan
+#define CHANNEL_CENTER MHZ(431.35)	// a legit channel in USA band plan
 #define CHANNEL_IF_SPACING (32)		// somewhat arbitrary choice
 #define IF_FREQUENCY (CHANNEL_BITRATE * CHANNEL_IF_SPACING / 4)		// equals 433_600
 #define LO_FREQ (CHANNEL_CENTER + IF_FREQUENCY)		// Channel is lower sideband from the LO
