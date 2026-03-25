@@ -54,7 +54,7 @@ void msk_setup(void)
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("OVP_FRAME_MODE: Configuring for frame-driven transmission\n");
 	printf("PTT off, loopback off, waiting for OVP frames, shift DAC bits left by 4\n");
-	WRITE_MSK(MSK_Control, 0x00000040);
+	WRITE_MSK(MSK_Control, 0x00000400);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 

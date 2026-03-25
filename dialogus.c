@@ -161,7 +161,7 @@ int enable_msk_transmission(void) {
 	WRITE_MSK(MSK_Init, 0x00000000);  // Deassert txinit    
 	usleep(100);  // might not be needed?
 
-	WRITE_MSK(MSK_Control, 0x00000041);	// PTT on, loopback off, shift DAC bits left by 4
+	WRITE_MSK(MSK_Control, 0x00000401);	// PTT on, loopback off, shift DAC bits left by 4
 
 	// Small delay to let hardware settle
 	usleep(1000);
@@ -176,7 +176,7 @@ int enable_msk_transmission(void) {
 // Disable PTT and stop MSK transmission
 int disable_msk_transmission(void) {
 	debug_printf(LEVEL_INFO, DEBUG_SESSION, "timeline @ %lld: Disabling MSK transmission (PTT OFF)\n", get_timestamp_us() - session_T0);
-	WRITE_MSK(MSK_Control, 0x00000040);	// PTT off
+	WRITE_MSK(MSK_Control, 0x00000400);	// PTT off
 
 	uint32_t status = READ_MSK(MSK_Status);
 	debug_printf(LEVEL_INFO, DEBUG_MSK, "MSK_Status after PTT disable: 0x%08x\n", status);
