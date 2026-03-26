@@ -43,14 +43,23 @@ uint64_t ovp_forwarded_count = 0;
 //
 // Having received the frame over the air, the FPGA might or might not
 // do more of the processing to extract the decoded data from the frame.
-// For now, we are assuming that it does no further processing, and
-// simply ships the unprocessed frame to us via IIO.
+// If the variable software_rx_processing is true, we assume that it
+// does no further processing, and simply ships the unprocessed frame
+// to us via IIO. In that case, we simulate the remaining processing
+// steps. Some steps are reproduced accurately, and others are merely
+// simplified dummy versions.
+//
+// If software_rx_processing is false, we assume that the FPGA has done
+// all the steps and delivered to us the logical contents of the frame.
+// We do no further processing in that case.
 //
 // The receiver thread blocks in a iio_buffer_refill() call with an
 // infinite timeout. Initially, before any frame sync word has been
 // detected, nothing happens. After a first frame sync word is detected,
-// the FPGA gathers up the whole frame and then burst-transfers it to
-// IIO. At that point, the iio_buffer_refill() call will return with
+// the FPGA gathers up the whole frame, processes it if software_rx_processing
+// is false, and then burst-transfers it to IIO.
+// 
+// At that point, the iio_buffer_refill() call will return with
 // one frame of data (this depends on the size of rxbuf matching the
 // size of an unprocessed frame, not including the sync word). While
 // further frames are being received, along with their properly-aligned
@@ -161,12 +170,14 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 				*p_out++ = ((int16_t*)p_dat)[0] & 0x00ff;
 			}
 
-			// dump received buffer for visual check
-			printf("Received raw data @ %p: ", first);
-			for (int i=0; i < (software_rx_processing? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE); i++) {
-				printf("%02x ", received_frame[i]);
+			if (debug_printf_will_print(LEVEL_BORING, DEBUG_DUMP)) {
+				// dump received buffer for visual check
+				printf("Received raw data @ %p: ", first);
+				for (int i=0; i < (software_rx_processing? OVP_DEMOD_FRAME_SIZE : OVP_SINGLE_FRAME_SIZE); i++) {
+					printf("%02x ", received_frame[i]);
+				}
+				printf("\n");
 			}
-			printf("\n");
 
 			if (software_rx_processing) {
 				// remove the interleaving so the decoder can do its work
@@ -181,12 +192,14 @@ void* ovp_receiver_thread(__attribute__((unused)) void *arg) {
 				memcpy(decoded_frame, received_frame, OVP_SINGLE_FRAME_SIZE);
 			}
 
-			//!!! dump logical data for visual check
-			printf("Received processed data: ");
-			for (int i=0; i < OVP_SINGLE_FRAME_SIZE; i++) {
-				printf("%02x ", decoded_frame[i]);
+			if (debug_printf_will_print(LEVEL_INFO, DEBUG_DUMP)) {
+				//!!! dump logical data for visual check
+				printf("Received processed data: ");
+				for (int i=0; i < OVP_SINGLE_FRAME_SIZE; i++) {
+					printf("%02x ", decoded_frame[i]);
+				}
+				printf("\n");
 			}
-			printf("\n");
 
 			if (!encapsulated_frame_host_known) {
 				printf("OTA frame received before first UDP datagram; discarded.");
