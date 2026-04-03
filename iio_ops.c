@@ -153,15 +153,17 @@ void iio_setup(void)
 	struct stream_cfg rxcfg;
 	rxcfg.bw_hz = RF_BANDWIDTH;
 	rxcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s rx sample rate
-	rxcfg.lo_hz = LO_FREQ;
+	rxcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(RX_CHANNEL_CENTER);
 	rxcfg.rf_port = "A_BALANCED";	// port A (select for rf freq.)
+	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Receive channel center: %lld Hz", RX_CHANNEL_CENTER);
 
 	// OPV hardware TX stream config
 	struct stream_cfg txcfg;
 	txcfg.bw_hz = RF_BANDWIDTH;
 	txcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s tx sample rate
-	txcfg.lo_hz = LO_FREQ;
+	txcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(TX_CHANNEL_CENTER);
 	txcfg.rf_port = "A";	// port A (select for rf freq.)
+	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Transmit channel center: %lld Hz", TX_CHANNEL_CENTER);
 
 	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring IIO context\n");
 	IIO_ENSURE((ctx = iio_create_default_context()) && "No context");

@@ -25,6 +25,7 @@ typedef enum {
     DEBUG_ENCAP,
     DEBUG_RX,
     DEBUG_REGS,
+    DEBUG_FREQS,
 } debug_topics;
 
 
