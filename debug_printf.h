@@ -1,5 +1,7 @@
 
 
+#include <stdbool.h>
+
 
 typedef enum {
     LEVEL_MUTE,
