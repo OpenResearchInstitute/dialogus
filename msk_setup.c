@@ -131,11 +131,15 @@ void msk_setup(void)
 	printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
 	printf("Write some default values for PI gain and bit shift.\n");
-	WRITE_MSK(LPF_Config_1, 0x005a5a5a);
-	WRITE_MSK(LPF_Config_2, 0x00a5a5a5);
+	WRITE_MSK(LPF_Config_1, 0x1d7fffff);	// Integral gain: 0x1d shift (29), value 0x7f_ffff (half scale)
+	WRITE_MSK(LPF_Config_2, 0x147fffff);	// Proportional gain: 0x14 shift (20), value 0x7f_ffff (half scale)
 	printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 	printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
 	printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
+
+	printf("Write a default value for symbol lock count and threshold.\n");
+	WRITE_MSK(symbol_lock_control, 0x002e2010);	// symbol lock count = 0x10 (16), symbol lock threshold = 0x0bb8 (3000)
+	printf("symbol_lock_control: (0x%08x@%04x)\n", READ_MSK(symbol_lock_control), OFFSET_MSK(symbol_lock_control));
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Set TX_DATA_WIDTH to 8.\n");
