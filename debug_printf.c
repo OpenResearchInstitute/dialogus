@@ -60,6 +60,11 @@ static bool should_print(debug_level level, debug_topics topic) {
     }
 }
 
+
+bool debug_printf_will_print(debug_level level, debug_topics topic) {
+        return should_print(level, topic);
+}
+
 void debug_printf(debug_level level, debug_topics topic, const char *format, ...) {
     char extended_format[1000];
 
