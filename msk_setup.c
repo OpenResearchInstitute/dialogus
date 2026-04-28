@@ -166,10 +166,10 @@ void msk_setup(void)
 */
 
 	int32_t proportional_gain =           0x007FFFFF;	// 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
-//	int32_t integral_gain =          	  0x007FFFFF;	// 0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
-	int32_t integral_gain =          	  0x00000000;	// zero integral for searching proportional gain
-//	int32_t proportional_gain_bit_shift = 20;	// Proportional gain: 0x14 shift (20)
-	int32_t proportional_gain_bit_shift = 16;	// Proportional gain: start at 0x10 shift (16)
+	int32_t integral_gain =          	  0x007FFFFF;	// 0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
+//used for first scan	int32_t integral_gain =          	  0x00000000;	// zero integral for searching proportional gain
+	int32_t proportional_gain_bit_shift = 20;	// Proportional gain: 0x14 shift (20)
+//used for first scan	int32_t proportional_gain_bit_shift = 24;	// Proportional gain: start at 0x10 shift (16)
 	int32_t integral_gain_bit_shift =     29;	// Integral gain: 0x1d shift (29)
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
