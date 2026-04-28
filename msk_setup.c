@@ -138,7 +138,7 @@ void msk_setup(void)
 	printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
 
 	printf("Write a default value for symbol lock count and threshold.\n");
-	WRITE_MSK(symbol_lock_control, 0x002e2010);	// symbol lock count = 0x10 (16), symbol lock threshold = 0x0b88 (2952)
+	WRITE_MSK(symbol_lock_control, 0x00026410);	// symbol lock count = 0x010 (16), symbol lock threshold = 0x0099 (153, encoding 153*2^16)
 	printf("symbol_lock_control: (0x%08x@%04x)\n", READ_MSK(symbol_lock_control), OFFSET_MSK(symbol_lock_control));
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
