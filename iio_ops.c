@@ -140,6 +140,7 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	// when a strong signal appears out of the silence
 	if (type == RX) {
 		wr_ch_str(chn, "gain_control_mode", "fast_attack");
+		debug_printf(LEVEL_INFO, DEBUG_IIO, "* Using fast_attack AGC mode\n");
 	}
 
 
