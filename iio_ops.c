@@ -135,6 +135,14 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 	wr_ch_lli(chn, "rf_bandwidth",       cfg->bw_hz);
 	wr_ch_lli(chn, "sampling_frequency", cfg->fs_hz);
 
+	//use fast_attack AGC
+	// slow_attack is too slow and we miss the first frame sync word
+	// when a strong signal appears out of the silence
+	if (type == RX) {
+		wr_ch_str(chn, "gain_control_mode", "fast_attack");
+	}
+
+
 	// Configure LO channel
 	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring AD9361 %s lo channel\n", type == TX ? "TX" : "RX");
 	if (!get_lo_chan(type, &chn)) { return false; }
