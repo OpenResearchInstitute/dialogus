@@ -53,11 +53,19 @@ static bool should_print(debug_level level, debug_topics topic) {
         
         case DEBUG_FREQS:
                 return level <= LEVEL_INFO;
+
+        case DEBUG_DUMP:
+                return level <= LEVEL_INFO;
         
         default:
                 printf("Unhandled topic %d in debug_printf.\n", topic);
                 return true;
     }
+}
+
+
+bool debug_printf_will_print(debug_level level, debug_topics topic) {
+        return should_print(level, topic);
 }
 
 void debug_printf(debug_level level, debug_topics topic, const char *format, ...) {

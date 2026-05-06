@@ -1,5 +1,7 @@
 
 
+#include <stdbool.h>
+
 
 typedef enum {
     LEVEL_MUTE,
@@ -26,8 +28,10 @@ typedef enum {
     DEBUG_RX,
     DEBUG_REGS,
     DEBUG_FREQS,
+    DEBUG_DUMP,
 } debug_topics;
 
 
+extern bool debug_printf_will_print(debug_level level, debug_topics topic);
 extern void debug_printf(debug_level level, debug_topics topic, const char *format, ...);
 extern void debug_printf_summary(void);

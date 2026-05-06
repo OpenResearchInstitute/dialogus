@@ -53,8 +53,8 @@ void msk_setup(void)
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("OVP_FRAME_MODE: Configuring for frame-driven transmission\n");
-	printf("PTT off, loopback off, waiting for OVP frames, shift DAC bits left by 4\n");
-	WRITE_MSK(MSK_Control, 0x00000400);
+	printf("PTT off, loopback off, waiting for OVP frames, shift DAC bits leftn");
+	WRITE_MSK(MSK_Control, 0x00000000 | TX_DAC_BITSHIFT);
 	printf("Reading back MSK_CONTROL status register. We see: (0x%08x@%04x)\n", READ_MSK(MSK_Control), OFFSET_MSK(MSK_Control));
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 
@@ -130,12 +130,16 @@ void msk_setup(void)
 	WRITE_MSK(LPF_Config_0, 0x00000000);	//accumulators in normal operation
 	printf("Wrote all 0 LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 
-	printf("Write some default values for PI gain and bit shift.\n");
+	printf("Write some arbitrary test values for PI gain and bit shift.\n");
 	WRITE_MSK(LPF_Config_1, 0x005a5a5a);
 	WRITE_MSK(LPF_Config_2, 0x00a5a5a5);
 	printf("LPF_Config_0: (0x%08x@%04x)\n", READ_MSK(LPF_Config_0), OFFSET_MSK(LPF_Config_0));
 	printf("LPF_Config_1: (0x%08x@%04x)\n", READ_MSK(LPF_Config_1), OFFSET_MSK(LPF_Config_1));
 	printf("LPF_Config_2: (0x%08x@%04x)\n", READ_MSK(LPF_Config_2), OFFSET_MSK(LPF_Config_2));
+
+	printf("Write a default value for symbol lock count and threshold.\n");
+	WRITE_MSK(symbol_lock_control, 0x00026410);	// symbol lock count = 0x010 (16), symbol lock threshold = 0x0099 (153, encoding 153*2^16)
+	printf("symbol_lock_control: (0x%08x@%04x)\n", READ_MSK(symbol_lock_control), OFFSET_MSK(symbol_lock_control));
 
 	printf("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 	printf("Set TX_DATA_WIDTH to 8.\n");
@@ -163,8 +167,10 @@ void msk_setup(void)
 
 	int32_t proportional_gain =           0x007FFFFF;	// 0x00000243; //0x0012984F for 32 bits 0x00001298 for 24 bits 243 for OE 
 	int32_t integral_gain =          	  0x007FFFFF;	// 0x000005A7; //0x0000C067 for 32 bits and 80 for 0E
-	int32_t proportional_gain_bit_shift = 18;	//0x0000000E; //0x18 is 24 and 0x20 is 32 and 0E is 14
-	int32_t integral_gain_bit_shift =     27;	//0x00000019; //0x18 is 24 and 0x20 is 32 and 0E is 14
+//used for first scan	int32_t integral_gain =          	  0x00000000;	// zero integral for searching proportional gain
+	int32_t proportional_gain_bit_shift = 20;	// Proportional gain: 0x14 shift (20)
+//used for first scan	int32_t proportional_gain_bit_shift = 24;	// Proportional gain: start at 0x10 shift (16)
+	int32_t integral_gain_bit_shift =     29;	// Integral gain: 0x1d shift (29)
 
 	int32_t proportional_config = (proportional_gain_bit_shift << 24) | (proportional_gain & 0x00FFFFFF);
 	int32_t integral_config = (integral_gain_bit_shift << 24) | (integral_gain & 0x00FFFFFF);

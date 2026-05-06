@@ -59,5 +59,7 @@ uint32_t capture_and_read_msk(size_t offset);
 #define TX_SYNC_CTRL_AUTO   0x00000001  // enabled when transmitter turns on
 #define TX_SYNC_CTRL_FORCE  0x00000002  // enabled now
 
+// Value for bit shift between 12-bit RX values (right aligned) and TX values (left aligned in 16 bits)
+#define TX_DAC_BITSHIFT 0x00000400  // tx shift of 4 bits left
 
 #endif // REGISTERS_H
