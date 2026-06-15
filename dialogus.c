@@ -456,12 +456,12 @@ void accept_decapsulated_frame(uint8_t *frame_data) {
 // -=-=-=-=-=-=-=-=-=-= MAIN FUNCTION =-=-=-=-=-=-=-=-=-=-=-
 /* Configuration based on ADI's example for simple configuration and streaming */
 
-int main (void)
+int main (int argc, char **argv)
 {
 
 	printf("Hello from Dialogus version %s\n", DIALOGUS_VERSION);
 
-	configure_dialogus();
+	configure_dialogus(argc, argv);
 
 	// Listen to ctrl+c and IIO_ENSURE
 	signal(SIGINT, handle_sig);
@@ -471,16 +471,16 @@ int main (void)
 	// OPV hardware RX stream config
 	struct stream_cfg rxcfg;
 	rxcfg.bw_hz = RF_BANDWIDTH;
-	rxcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s rx sample rate
-	rxcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(RX_CHANNEL_CENTER);
+	rxcfg.fs_hz = MHZ(61.44);	// rx sample rate
+	rxcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(config_rx_channel_center);
 	rxcfg.rf_port = "A_BALANCED";	// port A (select for rf freq.)
 	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Receive channel center: %lld Hz\n", RX_CHANNEL_CENTER);
 
 	// OPV hardware TX stream config
 	struct stream_cfg txcfg;
 	txcfg.bw_hz = RF_BANDWIDTH;
-	txcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s tx sample rate
-	txcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(TX_CHANNEL_CENTER);
+	txcfg.fs_hz = MHZ(61.44);	// tx sample rate
+	txcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(config_tx_channel_center);
 	txcfg.rf_port = "A";	// port A (select for rf freq.)
 	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Transmit channel center: %lld Hz\n", TX_CHANNEL_CENTER);
 
