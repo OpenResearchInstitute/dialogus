@@ -18,9 +18,9 @@ long long config_rx_channel_center = 0;
 //!!! put other hardware-specific configuration items here and in the .h file
 
 
-static bool handle_config_string(char *cfgstring) {
-    printf("Handling config: %s\n", cfgstring);
+bool some_configuration_found = false;
 
+static bool handle_config_string(char *cfgstring) {
     char *value;
     char *endptr;
     char cfg[1000];
@@ -43,7 +43,7 @@ static bool handle_config_string(char *cfgstring) {
                 printf("Configuration syntax error: RXFREQ cannot take an empty value.\n");
                 return false;
             } else {
-                printf("The RXFREQ value is set to %lld\n", config_rx_channel_center);
+                some_configuration_found = true;
             }
         } else if (strcasecmp(keyword, "txfreq") == 0) {
             value = strtok(NULL, "=");
@@ -59,7 +59,7 @@ static bool handle_config_string(char *cfgstring) {
                 printf("Configuration syntax error: TXFREQ cannot take an empty value.\n");
                 return false;
             } else {
-                printf("The TXFREQ value is set to %lld\n", config_tx_channel_center);
+                some_configuration_found = true;
             }
         } else if (strcasecmp(keyword, "freq") == 0) {
             value = strtok(NULL, "=");
@@ -76,7 +76,7 @@ static bool handle_config_string(char *cfgstring) {
                 printf("Configuration syntax error: FREQ cannot take an empty value.\n");
                 return false;
             } else {
-                printf("The FREQ value is set to %lld\n", config_rx_channel_center);
+                some_configuration_found = true;
             }
         } else {
             printf("Unknown keyword in configuration string: %s\n", keyword);
@@ -99,7 +99,7 @@ static void configure_dialogus_from_environment(void) {
     fp = popen("fw_printenv", "r");
     while (fgets(buf, sizeof(buf), fp) != NULL) {
         if (strncmp(buf, "dialogus=pluto", 14) == 0) {
-            printf("Dialogus is configured for ADALM PLUTO hardware.\n");
+            printf("CONFIG: Dialogus is configured for ADALM PLUTO hardware.\n");
             found = true;
             if (strlen(buf) > 15) {
                 found_params = true;
@@ -108,7 +108,7 @@ static void configure_dialogus_from_environment(void) {
             //!!! apply fixed Pluto settings here
             break;
         } else if (strncmp(buf, "dialogus=libre", 14) == 0) {
-            printf("Dialogus is configured for LibreSDR hardware.\n");
+            printf("CONFIG: Dialogus is configured for LibreSDR hardware.\n");
             found = true;
             if (strlen(buf) > 15) {
                 found_params = true;
@@ -121,7 +121,7 @@ static void configure_dialogus_from_environment(void) {
     pclose(fp);
 
     if (!found) {
-        printf("You must fw_setenv dialogus to your hardware type.\n");
+        printf("CONFIG: You must fw_setenv dialogus to your hardware type.\n");
         exit(1);
     }
 
@@ -129,9 +129,10 @@ static void configure_dialogus_from_environment(void) {
         char *token = strtok(params, " \n");
         while (token != NULL) {
             if (!handle_config_string(token)) {
-                printf("Invalid configuration string in environment: %s\n", token);
+                printf("CONFIG: Invalid configuration string in environment: %s\n", token);
                 exit(2);
             }
+            some_configuration_found = true;
             token = strtok(NULL, " \n");
         }
     }
@@ -141,8 +142,10 @@ static void configure_dialogus_from_environment(void) {
 static void configure_dialogus_from_args(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (!handle_config_string(argv[i])) {
-            printf("Invalid configuration string on command line: %s\n", argv[i]);
+            printf("CONFIG: Invalid configuration string on command line: %s\n", argv[i]);
             exit(3);
+        } else {
+            some_configuration_found = true;
         }
     }
 }
@@ -154,14 +157,23 @@ static void configure_dialogus_from_file(void) {
 
 static void check_dialogus_configuration(void) {
 
-    if (config_rx_channel_center == 0) {
-        printf("No RXFREQ has been set.\n");
+    if (!some_configuration_found) {
+        printf("CONFIG: No configuration found in a file, in the environment, or on the command line.\n");
         exit(1);
     }
 
-    if (config_tx_channel_center == 0) {
-        printf("No TXFREQ has been set.\n");
+    if (config_rx_channel_center == 0) {
+        printf("CONFIG: No RXFREQ has been set.\n");
         exit(1);
+    } else {
+        printf("CONFIG: The RXFREQ value is set to %lld\n", config_rx_channel_center);
+    }
+
+    if (config_tx_channel_center == 0) {
+        printf("CONFIG: No TXFREQ has been set.\n");
+        exit(1);
+    } else {
+        printf("CONFIG: The TXFREQ value is set to %lld\n", config_tx_channel_center);
     }
 }
 
