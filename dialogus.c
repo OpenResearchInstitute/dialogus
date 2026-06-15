@@ -474,7 +474,7 @@ int main (int argc, char **argv)
 	rxcfg.fs_hz = MHZ(61.44);	// rx sample rate
 	rxcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(config_rx_channel_center);
 	rxcfg.rf_port = "A_BALANCED";	// port A (select for rf freq.)
-	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Receive channel center: %lld Hz\n", RX_CHANNEL_CENTER);
+	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Receive channel center: %lld Hz\n", config_rx_channel_center);
 
 	// OPV hardware TX stream config
 	struct stream_cfg txcfg;
@@ -482,7 +482,7 @@ int main (int argc, char **argv)
 	txcfg.fs_hz = MHZ(61.44);	// tx sample rate
 	txcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(config_tx_channel_center);
 	txcfg.rf_port = "A";	// port A (select for rf freq.)
-	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Transmit channel center: %lld Hz\n", TX_CHANNEL_CENTER);
+	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Transmit channel center: %lld Hz\n", config_tx_channel_center);
 
 	iio_setup(rxcfg, txcfg);
 
