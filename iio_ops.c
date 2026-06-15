@@ -24,14 +24,6 @@ extern void cleanup_and_exit(int retval);
 	} \
 }
 
-/* common RX and TX streaming params */
-struct stream_cfg {
-	long long bw_hz;	// Analog bandwidth in Hz
-	long long fs_hz;	// Baseband sample rate in Hz
-	long long lo_hz;	// Local oscillator frequency in Hz
-	const char* rf_port;	// Port name
-};
-
 /* scratch mem for strings */
 // Strings in this buffer are transient. Caller must not expect
 // the string to persist after it is used.
@@ -152,27 +144,11 @@ bool cfg_ad9361_streaming_ch(struct stream_cfg *cfg, enum iodev type, int chid)
 }
 
 
-void iio_setup(void)
+void iio_setup(struct stream_cfg rxcfg, struct stream_cfg txcfg)
 {
 	// Streaming devices
 	struct iio_device *tx;
 	struct iio_device *rx;
-
-	// OPV hardware RX stream config
-	struct stream_cfg rxcfg;
-	rxcfg.bw_hz = RF_BANDWIDTH;
-	rxcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s rx sample rate
-	rxcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(RX_CHANNEL_CENTER);
-	rxcfg.rf_port = "A_BALANCED";	// port A (select for rf freq.)
-	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Receive channel center: %lld Hz\n", RX_CHANNEL_CENTER);
-
-	// OPV hardware TX stream config
-	struct stream_cfg txcfg;
-	txcfg.bw_hz = RF_BANDWIDTH;
-	txcfg.fs_hz = MHZ(61.44);	// 2.5 MS/s tx sample rate
-	txcfg.lo_hz = LO_FREQ_FOR_CHANNEL_CENTER(TX_CHANNEL_CENTER);
-	txcfg.rf_port = "A";	// port A (select for rf freq.)
-	debug_printf(LEVEL_INFO, DEBUG_FREQS, "Transmit channel center: %lld Hz\n", TX_CHANNEL_CENTER);
 
 	debug_printf(LEVEL_INFO, DEBUG_IIO, "* Acquiring IIO context\n");
 	IIO_ENSURE((ctx = iio_create_default_context()) && "No context");
